@@ -14,12 +14,14 @@ project/
 │   ├── Division.py # this function divides two numbers
 │   ├── Multiplication
 │   ├── Subtraction.py # this function subtracts two numbers
-│   ├── leaked_secrets.py # A file containing a secret token to verify security guard
+│   ├── leaked_secrets.py # git-aegis: local-only
 │   └── main.py # Baseline helper function
 └── test_cli_wrapper.py # Ensure the primary codebase is in the python path
 ```
 <!-- git-aegis-structure-end -->
 
 <!-- git-aegis-changelog -->
+* 2026-06-15 14:24:44 - docs(changelog): add entry for simulated secret token update
+* 2026-06-15 14:21:08 - chore(leaked-secrets): update simulated secret token value
 * 2026-06-15 14:19:02 - feat(math): add division function and refactor addition script to function
 * 2026-06-15 14:17:23 - feat(arithmetic): add basic arithmetic operations
