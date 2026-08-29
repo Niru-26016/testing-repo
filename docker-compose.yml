@@ -1,0 +1,30 @@
+services:
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: argus-testing-backend
+    ports:
+      - "8001:8001"
+      - "8002:8002"
+      - "8003:8003"
+      - "8004:8004"
+    environment:
+      - HOST=0.0.0.0
+      - ARGUS_WEBHOOK_URL=http://host.docker.internal:8000/webhook/crash
+      - VERCEL_GIT_COMMIT_SHA=8a3d12f
+    restart: unless-stopped
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: argus-testing-frontend
+    ports:
+      - "3000:3000"
+    environment:
+      - BACKEND_URL=http://backend:8001
+      - NODE_ENV=production
+    depends_on:
+      - backend
+    restart: unless-stopped

@@ -1,18 +1,18 @@
 # dependencies
-/node_modules
-/.pnp
+node_modules/
+.pnp
 .pnp.js
 
 # testing
-/coverage
+coverage/
 
 # next.js
-/.next/
-/out/
+.next/
+out/
 
 # production
-/build
-/dist/
+build/
+dist/
 
 # debug
 npm-debug.log*
@@ -37,3 +37,4 @@ __pycache__/
 .pytest_cache/
 venv/
 env/
+.venv/
