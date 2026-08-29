@@ -1,0 +1,44 @@
+name: Auto-Deploy to VM
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+jobs:
+  deploy:
+    name: Deploy to Cloud VM
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Deploy via SSH
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.VM_HOST }}
+          username: ${{ secrets.VM_USER }}
+          key: ${{ secrets.VM_SSH_KEY }}
+          port: 22
+          script: |
+            set -e
+            echo "🚀 Starting deployment on VM..."
+            cd ~/testing-repo
+
+            # Fetch latest updates from origin & upstream
+            git fetch --all --prune
+
+            # Sync with the latest commit on main
+            git checkout main
+            git pull origin main || git pull upstream main
+
+            # Rebuild and restart containers
+            echo "🔄 Rebuilding and restarting Docker containers..."
+            docker compose up -d --build
+
+            # Clean up old unused Docker images to save disk space
+            docker image prune -f
+
+            echo "✅ Deployment completed successfully! Live on http://${{ secrets.VM_HOST }}"
