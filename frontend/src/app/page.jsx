@@ -161,12 +161,14 @@ export default function StorefrontPage() {
         return;
       }
 
-      // Scenario 3: Graceful fallback when code is entered but invalid (discount is 0)
+      // Scenario 3: Valid or Handled Fallback
       const enteredCode = promoCode.trim().toUpperCase();
-      if (enteredCode && data.pricing && data.pricing.discount_percent === 0 && !["SAVE10", "SAVE20", "FREESHIP100"].includes(enteredCode)) {
+      if (enteredCode && data.pricing && data.pricing.discount_percent > 0) {
+        // Valid coupon successfully applied
+        showToast(`Coupon applied! ${data.pricing.discount_percent}% discount added`, "success");
+      } else if (enteredCode && data.pricing && data.pricing.discount_percent === 0) {
+        // Handled invalid code (post-fix)
         showToast("Incorrect or invalid code", "error");
-      } else if (enteredCode && data.pricing && data.pricing.discount_percent > 0) {
-        showToast(`Promo code applied: ${data.pricing.discount_percent}% off!`, "success");
       }
 
       // Successful checkout calculation
@@ -261,7 +263,7 @@ export default function StorefrontPage() {
                 </div>
               )}
               <div>
-                <p className="text-xs font-semibold">{toast.type === 'error' ? 'Invalid Code' : 'Success'}</p>
+                <p className="text-xs font-semibold">{toast.type === 'error' ? 'Invalid Code' : 'Coupon Applied'}</p>
                 <p className="text-xs text-slate-700 mt-0.5">{toast.message}</p>
               </div>
             </div>
@@ -335,19 +337,30 @@ export default function StorefrontPage() {
               <Tag className="w-5 h-5" />
             </div>
             <div>
-              <p className="text-sm font-semibold text-slate-900">Use coupon codes to get discounts</p>
-              <p className="text-xs text-slate-500">Apply coupon codes during checkout to claim discounts on your order.</p>
+              <p className="text-sm font-semibold text-slate-900">Valid Coupon Codes: SAVE10 (10% OFF) & SAVE20 (20% OFF)</p>
+              <p className="text-xs text-slate-500">Apply valid promo codes during checkout. Any invalid code will trigger a calculation error.</p>
             </div>
           </div>
-          <button
-            onClick={() => {
-              setPromoCode("SAVE10");
-              setIsCheckoutOpen(true);
-            }}
-            className="bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-semibold px-4 py-2.5 rounded-xl transition-all shadow-sm shadow-indigo-600/20 whitespace-nowrap"
-          >
-            Apply Coupon (SAVE10)
-          </button>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => {
+                setPromoCode("SAVE10");
+                setIsCheckoutOpen(true);
+              }}
+              className="bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-semibold px-3.5 py-2 rounded-xl transition-all shadow-sm shadow-indigo-600/20 whitespace-nowrap"
+            >
+              SAVE10
+            </button>
+            <button
+              onClick={() => {
+                setPromoCode("SAVE20");
+                setIsCheckoutOpen(true);
+              }}
+              className="bg-white hover:bg-indigo-50 border border-indigo-200 text-indigo-700 text-xs font-semibold px-3.5 py-2 rounded-xl transition-all shadow-sm whitespace-nowrap"
+            >
+              SAVE20
+            </button>
+          </div>
         </div>
 
         {/* Category Filters */}
@@ -461,7 +474,7 @@ export default function StorefrontPage() {
                   <div className="flex gap-2">
                     <input
                       type="text"
-                      placeholder="Enter coupon code (e.g. SAVE10)"
+                      placeholder="Enter coupon (e.g. SAVE10, SAVE20)"
                       value={promoCode}
                       onChange={(e) => setPromoCode(e.target.value)}
                       className="flex-1 bg-white border border-slate-300 rounded-xl px-3 py-2 text-xs text-slate-900 placeholder-slate-400 focus:outline-none focus:border-indigo-500 font-mono uppercase"
@@ -474,6 +487,17 @@ export default function StorefrontPage() {
                       {loading ? <RefreshCw className="w-3.5 h-3.5 animate-spin" /> : "Apply"}
                     </button>
                   </div>
+
+                  {/* Coupon Applied Badge */}
+                  {checkoutResult?.pricing?.discount_amount > 0 && (
+                    <div className="mt-2.5 flex items-center justify-between bg-emerald-50 border border-emerald-200 text-emerald-800 px-3 py-2 rounded-xl text-xs animate-fade-in">
+                      <div className="flex items-center gap-1.5 font-medium">
+                        <CheckCircle2 className="w-4 h-4 text-emerald-600" />
+                        <span>Coupon applied! ({checkoutResult.pricing.discount_percent}% OFF)</span>
+                      </div>
+                      <span className="font-mono font-bold text-emerald-700">-${checkoutResult.pricing.discount_amount.toFixed(2)}</span>
+                    </div>
+                  )}
                 </div>
 
                 <div>
@@ -505,7 +529,7 @@ export default function StorefrontPage() {
                   </strong>
                   <p className="text-xs text-slate-700">Total Charged: <span className="font-mono font-bold text-slate-900">${checkoutResult.pricing.total.toFixed(2)}</span></p>
                   {checkoutResult.pricing.discount_amount > 0 && (
-                    <p className="text-[11px] text-emerald-700 font-medium">Discount Applied: -${checkoutResult.pricing.discount_amount.toFixed(2)}</p>
+                    <p className="text-[11px] text-emerald-700 font-medium">Coupon Discount Applied: -${checkoutResult.pricing.discount_amount.toFixed(2)}</p>
                   )}
                   {checkoutResult.shipping && (
                     <p className="text-[10px] text-slate-500 font-mono">Carrier: {checkoutResult.shipping.carrier} (${checkoutResult.shipping.shipping_fee})</p>
@@ -515,16 +539,30 @@ export default function StorefrontPage() {
             </div>
 
             {/* Bottom Order Summary & Action */}
-            <div className="border-t border-slate-200 pt-4 mt-6">
-              <div className="flex items-center justify-between text-sm mb-4">
-                <span className="text-slate-600 font-medium">Cart Subtotal:</span>
-                <span className="font-mono text-slate-900 font-bold text-base">${cartSubtotal.toFixed(2)}</span>
+            <div className="border-t border-slate-200 pt-4 mt-6 space-y-2">
+              <div className="flex items-center justify-between text-xs text-slate-500">
+                <span>Subtotal:</span>
+                <span className="font-mono text-slate-700 font-semibold">${cartSubtotal.toFixed(2)}</span>
+              </div>
+              
+              {checkoutResult?.pricing?.discount_amount > 0 && (
+                <div className="flex items-center justify-between text-xs text-emerald-700 font-medium">
+                  <span>Coupon Discount ({checkoutResult.pricing.discount_percent}%):</span>
+                  <span className="font-mono font-bold">-${checkoutResult.pricing.discount_amount.toFixed(2)}</span>
+                </div>
+              )}
+
+              <div className="flex items-center justify-between text-sm pt-2 border-t border-slate-100">
+                <span className="text-slate-700 font-bold">Estimated Total:</span>
+                <span className="font-mono text-slate-900 font-bold text-base">
+                  ${(checkoutResult?.pricing?.total ?? cartSubtotal).toFixed(2)}
+                </span>
               </div>
 
               <button
                 onClick={handleCheckout}
                 disabled={loading || cart.length === 0}
-                className="w-full bg-indigo-600 hover:bg-indigo-700 disabled:bg-slate-200 disabled:text-slate-400 text-white font-semibold py-3.5 rounded-xl flex items-center justify-center gap-2 transition-all shadow-md shadow-indigo-600/20"
+                className="w-full mt-3 bg-indigo-600 hover:bg-indigo-700 disabled:bg-slate-200 disabled:text-slate-400 text-white font-semibold py-3.5 rounded-xl flex items-center justify-center gap-2 transition-all shadow-md shadow-indigo-600/20"
               >
                 {loading ? <RefreshCw className="w-4 h-4 animate-spin" /> : <ArrowRight className="w-4 h-4" />}
                 <span>{loading ? "Processing Order..." : "Place Order & Calculate"}</span>
