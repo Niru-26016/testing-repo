@@ -1,3 +1,5 @@
+'use client';
+
 import React, { useState } from 'react';
 import { 
   ShoppingBag, 
@@ -7,7 +9,9 @@ import {
   RefreshCw, 
   AlertTriangle,
   Search,
-  Star
+  Star,
+  Sparkles,
+  ShieldAlert
 } from 'lucide-react';
 
 const PRODUCTS = [
@@ -53,7 +57,7 @@ const PRODUCTS = [
   }
 ];
 
-export default function App() {
+export default function StorefrontPage() {
   const [cart, setCart] = useState([
     { ...PRODUCTS[0], quantity: 1 }
   ]);
@@ -115,22 +119,24 @@ export default function App() {
       const data = await res.json();
 
       if (!res.ok) {
-        // Standard e-commerce error handling for end users
         setCheckoutResult({
           error: true,
           status: res.status,
-          message: "Unable to process order pricing. Please verify your promo code or address."
+          message: data.message || "Unable to process order pricing. Production exception caught by Argus Observer.",
+          trace_id: data.trace_id
         });
       } else {
         setCheckoutResult({
           error: false,
-          pricing: data.pricing
+          pricing: data.pricing,
+          inventory: data.inventory,
+          shipping: data.shipping
         });
       }
     } catch (err) {
       setCheckoutResult({
         error: true,
-        message: "Failed to connect to checkout service. Please try again."
+        message: "Failed to connect to checkout service. Please verify the backend is running on port 8001."
       });
     } finally {
       setLoading(false);
@@ -148,7 +154,10 @@ export default function App() {
     <div className="min-h-screen bg-slate-950 text-slate-100 flex flex-col font-sans">
       {/* Top Utility Bar */}
       <div className="bg-slate-900 border-b border-slate-800 px-6 py-2 flex items-center justify-between text-xs text-slate-400">
-        <div>Free shipping on orders over $50</div>
+        <div className="flex items-center gap-2">
+          <Sparkles className="w-3.5 h-3.5 text-indigo-400" />
+          <span>Next.js Monorepo Target for ARGUS Production Debugger</span>
+        </div>
         <div className="flex items-center gap-4">
           <span>Customer Support</span>
           <span>USD ($)</span>
@@ -159,10 +168,15 @@ export default function App() {
       <header className="border-b border-slate-800 bg-slate-900/90 backdrop-blur-md sticky top-0 z-40 px-6 py-4 flex items-center justify-between gap-4">
         <div className="flex items-center gap-3">
           <div className="w-9 h-9 rounded-xl bg-indigo-600 flex items-center justify-center font-bold text-white text-lg shadow-md shadow-indigo-600/30">
-            R
+            A
           </div>
           <div>
-            <h1 className="font-bold text-lg text-white tracking-tight">DemoStore <span className="text-[10px] font-normal text-slate-400 bg-slate-800 px-2 py-0.5 rounded-full border border-slate-700">React + Vite</span></h1>
+            <h1 className="font-bold text-lg text-white tracking-tight flex items-center gap-2">
+              ArgusStore 
+              <span className="text-[10px] font-medium text-indigo-300 bg-indigo-950/80 px-2 py-0.5 rounded-full border border-indigo-700/50">
+                Next.js App
+              </span>
+            </h1>
             <p className="text-xs text-slate-400">Developer Gear & Equipment</p>
           </div>
         </div>
@@ -196,21 +210,35 @@ export default function App() {
       {/* Main Content */}
       <main className="flex-1 max-w-7xl w-full mx-auto px-6 py-8 space-y-8">
         {/* Hero Promotion */}
-        <div className="bg-gradient-to-r from-indigo-950 via-slate-900 to-slate-950 border border-indigo-500/20 p-8 rounded-2xl flex flex-col md:flex-row items-start md:items-center justify-between gap-6">
+        <div className="bg-gradient-to-r from-indigo-950 via-slate-900 to-slate-950 border border-indigo-500/20 p-8 rounded-2xl flex flex-col md:flex-row items-start md:items-center justify-between gap-6 shadow-xl shadow-indigo-950/20">
           <div>
-            <span className="text-xs font-semibold text-indigo-400 tracking-wider uppercase">Limited Time Offers</span>
-            <h2 className="text-2xl font-bold text-white mt-1">Upgrade Your Workspace Setup</h2>
-            <p className="text-xs text-slate-400 mt-2 max-w-xl">
-              Apply coupon codes during checkout to receive store discounts. Use promo codes like <code className="text-indigo-300 font-mono">SAVE10</code> or <code className="text-indigo-300 font-mono">SAVE20</code>.
+            <span className="text-xs font-semibold text-indigo-400 tracking-wider uppercase flex items-center gap-1.5">
+              <ShieldAlert className="w-3.5 h-3.5" /> ARGUS Observer Sandbox Target
+            </span>
+            <h2 className="text-2xl font-bold text-white mt-1">Next.js E-Commerce Target App</h2>
+            <p className="text-xs text-slate-400 mt-2 max-w-xl leading-relaxed">
+              Use promo codes during checkout to test discounts or trigger intentional backend bug scenarios (<code className="text-indigo-300 font-mono">SAVE10</code>, <code className="text-rose-300 font-mono">INVALID50</code>, or <code className="text-amber-300 font-mono">FREESHIP100</code>).
             </p>
           </div>
-          <div className="flex gap-2 text-xs font-mono">
-            <span className="bg-slate-900 border border-slate-700 px-3 py-2 rounded-xl text-indigo-300">
+          <div className="flex flex-wrap gap-2 text-xs font-mono">
+            <button 
+              onClick={() => { setPromoCode("SAVE10"); setIsCheckoutOpen(true); }}
+              className="bg-slate-900 hover:bg-slate-800 border border-slate-700 px-3 py-2 rounded-xl text-indigo-300 transition-colors"
+            >
               SAVE10 (10% OFF)
-            </span>
-            <span className="bg-slate-900 border border-slate-700 px-3 py-2 rounded-xl text-indigo-300">
-              SAVE20 (20% OFF)
-            </span>
+            </button>
+            <button 
+              onClick={() => { setPromoCode("INVALID50"); setIsCheckoutOpen(true); }}
+              className="bg-slate-900 hover:bg-rose-950/40 border border-rose-900/50 px-3 py-2 rounded-xl text-rose-300 transition-colors"
+            >
+              INVALID50 (KeyError)
+            </button>
+            <button 
+              onClick={() => { setPromoCode("FREESHIP100"); setIsCheckoutOpen(true); }}
+              className="bg-slate-900 hover:bg-amber-950/40 border border-amber-900/50 px-3 py-2 rounded-xl text-amber-300 transition-colors"
+            >
+              FREESHIP100 (ZeroDiv)
+            </button>
           </div>
         </div>
 
@@ -276,7 +304,7 @@ export default function App() {
       {/* Cart & Checkout Slide-Over Drawer */}
       {isCheckoutOpen && (
         <div className="fixed inset-0 z-50 bg-slate-950/80 backdrop-blur-sm flex justify-end">
-          <div className="bg-slate-900 border-l border-slate-800 w-full max-w-md h-full flex flex-col justify-between p-6 overflow-y-auto">
+          <div className="bg-slate-900 border-l border-slate-800 w-full max-w-md h-full flex flex-col justify-between p-6 overflow-y-auto shadow-2xl">
             <div>
               <div className="flex items-center justify-between pb-4 border-b border-slate-800">
                 <h3 className="font-bold text-lg text-white flex items-center gap-2">
@@ -319,7 +347,7 @@ export default function App() {
                   </label>
                   <input
                     type="text"
-                    placeholder="Enter coupon code"
+                    placeholder="Enter coupon code (e.g. SAVE10, INVALID50)"
                     value={promoCode}
                     onChange={(e) => setPromoCode(e.target.value)}
                     className="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-indigo-500 font-mono uppercase"
@@ -353,9 +381,12 @@ export default function App() {
                   {checkoutResult.error ? (
                     <div className="space-y-1">
                       <strong className="font-bold flex items-center gap-1.5 text-rose-400">
-                        <AlertTriangle className="w-4 h-4 text-rose-400" /> Checkout Error
+                        <AlertTriangle className="w-4 h-4 text-rose-400" /> Checkout Error (Intercepted by Argus)
                       </strong>
                       <p className="text-slate-300 leading-relaxed text-[11px]">{checkoutResult.message}</p>
+                      {checkoutResult.trace_id && (
+                        <p className="text-[10px] font-mono text-indigo-300 mt-1">Trace ID: {checkoutResult.trace_id}</p>
+                      )}
                     </div>
                   ) : (
                     <div className="space-y-1">
@@ -365,6 +396,9 @@ export default function App() {
                       <p className="text-xs text-slate-300">Total Charged: <span className="font-mono font-bold text-white">${checkoutResult.pricing.total.toFixed(2)}</span></p>
                       {checkoutResult.pricing.discount_amount > 0 && (
                         <p className="text-[11px] text-emerald-400">Discount Applied: -${checkoutResult.pricing.discount_amount.toFixed(2)}</p>
+                      )}
+                      {checkoutResult.shipping && (
+                        <p className="text-[10px] text-slate-400 font-mono">Carrier: {checkoutResult.shipping.carrier} (${checkoutResult.shipping.shipping_fee})</p>
                       )}
                     </div>
                   )}
@@ -394,7 +428,7 @@ export default function App() {
 
       {/* Footer */}
       <footer className="border-t border-slate-800 px-6 py-6 text-center text-xs text-slate-500 font-mono">
-        DemoStore React App &copy; 2026. Powered by Vite + React 18.
+        ArgusStore Target App &copy; 2026. Powered by Next.js App Router + FastAPI Backend.
       </footer>
     </div>
   );
