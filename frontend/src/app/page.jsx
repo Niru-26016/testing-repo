@@ -458,13 +458,22 @@ export default function StorefrontPage() {
                   <label className="text-xs font-semibold text-slate-700 flex items-center gap-1 mb-1.5">
                     <Tag className="w-3.5 h-3.5 text-indigo-600" /> Promo Code
                   </label>
-                  <input
-                    type="text"
-                    placeholder="Enter coupon code"
-                    value={promoCode}
-                    onChange={(e) => setPromoCode(e.target.value)}
-                    className="w-full bg-white border border-slate-300 rounded-xl px-3 py-2 text-xs text-slate-900 placeholder-slate-400 focus:outline-none focus:border-indigo-500 font-mono uppercase"
-                  />
+                  <div className="flex gap-2">
+                    <input
+                      type="text"
+                      placeholder="Enter coupon code (e.g. SAVE10)"
+                      value={promoCode}
+                      onChange={(e) => setPromoCode(e.target.value)}
+                      className="flex-1 bg-white border border-slate-300 rounded-xl px-3 py-2 text-xs text-slate-900 placeholder-slate-400 focus:outline-none focus:border-indigo-500 font-mono uppercase"
+                    />
+                    <button
+                      onClick={handleCheckout}
+                      disabled={loading || !promoCode.trim()}
+                      className="bg-indigo-600 hover:bg-indigo-700 disabled:bg-slate-200 disabled:text-slate-400 text-white text-xs font-semibold px-4 py-2 rounded-xl transition-all shadow-sm"
+                    >
+                      {loading ? <RefreshCw className="w-3.5 h-3.5 animate-spin" /> : "Apply"}
+                    </button>
+                  </div>
                 </div>
 
                 <div>
