@@ -9,14 +9,14 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 
-# Add current folder to sys.path for clean service imports on Vercel
+# Add current folder to sys.path for clean microservice imports on Vercel
 sys.path.insert(0, os.path.dirname(__file__))
 
-from services.pricing_engine import calculate_cart_summary
-from services.shipping_engine import calculate_shipping_rates
-from services.inventory_engine import verify_inventory_availability
+from microservices.pricing_service import calculate_pricing_logic, app as pricing_app
+from microservices.shipping_service import calculate_shipping_logic, app as shipping_app
+from microservices.inventory_service import verify_inventory_logic, app as inventory_app
 
-app = FastAPI(title="ArgusStore Backend API", version="1.0.0")
+app = FastAPI(title="ArgusStore Microservices API Gateway", version="2.0.0")
 
 app.add_middleware(
     CORSMiddleware,
@@ -26,6 +26,11 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+# Mount individual microservices as sub-applications on the gateway
+app.mount("/services/pricing", pricing_app)
+app.mount("/services/shipping", shipping_app)
+app.mount("/services/inventory", inventory_app)
+
 ARGUS_WEBHOOK_URL = os.getenv("ARGUS_WEBHOOK_URL", "http://127.0.0.1:8000/webhook/crash")
 CURRENT_GIT_COMMIT = os.getenv("VERCEL_GIT_COMMIT_SHA", "8a3d12f")
 
@@ -33,7 +38,7 @@ CURRENT_GIT_COMMIT = os.getenv("VERCEL_GIT_COMMIT_SHA", "8a3d12f")
 @app.middleware("http")
 async def argus_observer_middleware(request: Request, call_next):
     """
-    ARGUS Production Observer Middleware:
+    ARGUS Production Observer Middleware for API Gateway:
     Interceptors unhandled exceptions in production API routes, formats tracebacks,
     redacts sensitive information, and posts a crash payload to ARGUS /webhook/crash.
     """
@@ -56,15 +61,15 @@ async def argus_observer_middleware(request: Request, call_next):
         # Fire async HTTP POST webhook to ARGUS
         try:
             requests.post(ARGUS_WEBHOOK_URL, json=payload, timeout=2.0)
-            print(f"[ARGUS Observer] Dispatched crash webhook for {trace_id}: {error_msg}")
+            print(f"[ARGUS Gateway Observer] Dispatched crash webhook for {trace_id}: {error_msg}")
         except Exception as net_err:
-            print(f"[ARGUS Observer] Webhook dispatch offline: {net_err}")
+            print(f"[ARGUS Gateway Observer] Webhook dispatch offline: {net_err}")
             
         return JSONResponse(
             status_code=500,
             content={
                 "error": "500 Internal Server Error",
-                "message": f"Runtime exception in production service: {error_msg}",
+                "message": f"Runtime exception in production gateway service: {error_msg}",
                 "trace_id": trace_id,
                 "argus_notified": True
             }
@@ -79,7 +84,12 @@ class CheckoutRequest(BaseModel):
 
 @app.get("/api/health")
 def health_check():
-    return {"status": "ONLINE", "app": "ArgusStore API", "commit": CURRENT_GIT_COMMIT}
+    return {
+        "status": "ONLINE", 
+        "gateway": "ArgusStore Microservices API Gateway", 
+        "commit": CURRENT_GIT_COMMIT,
+        "microservices": ["pricing_service", "shipping_service", "inventory_service"]
+    }
 
 
 @app.get("/api/products")
@@ -127,22 +137,23 @@ def list_products():
 @app.post("/api/checkout")
 def process_checkout(req: CheckoutRequest):
     """
-    Processes cart checkout calculations and inventory verification.
-    Passing promo_code='INVALID50' (or any unknown code) triggers KeyError in pricing_engine.py.
-    Passing promo_code='FREESHIP100' triggers ZeroDivisionError in pricing_engine.py.
-    Passing address without zip_code triggers KeyError in shipping_engine.py.
-    Passing empty items list triggers IndexError in inventory_engine.py.
+    API Gateway Checkout Orchestrator:
+    Dispatches calls across microservices (Inventory Microservice -> Shipping Microservice -> Pricing Microservice).
+    Passing promo_code='INVALID50' triggers KeyError in Pricing Microservice.
+    Passing promo_code='FREESHIP100' triggers ZeroDivisionError in Pricing Microservice.
+    Passing address without zip_code triggers KeyError in Shipping Microservice.
+    Passing empty items list triggers IndexError in Inventory Microservice.
     """
-    # 1. Verify inventory
-    inventory = verify_inventory_availability(req.items)
+    # 1. Dispatch to Inventory Microservice
+    inventory = verify_inventory_logic(req.items)
     
-    # 2. Calculate shipping rates if address provided
+    # 2. Dispatch to Shipping Microservice if address provided
     shipping = None
     if req.address:
-        shipping = calculate_shipping_rates(req.address)
+        shipping = calculate_shipping_logic(req.address)
         
-    # 3. Calculate pricing & discounts
-    pricing = calculate_cart_summary(req.items, promo_code=req.promo_code)
+    # 3. Dispatch to Pricing Microservice
+    pricing = calculate_pricing_logic(req.items, promo_code=req.promo_code)
     
     return {
         "status": "SUCCESS",
