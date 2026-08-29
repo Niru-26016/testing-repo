@@ -1,5 +1,3 @@
-'use client';
-
 import React, { useState } from 'react';
 import { 
   ShoppingBag, 
@@ -9,7 +7,6 @@ import {
   RefreshCw, 
   AlertTriangle,
   Search,
-  SlidersHorizontal,
   Star
 } from 'lucide-react';
 
@@ -56,7 +53,7 @@ const PRODUCTS = [
   }
 ];
 
-export default function Storefront() {
+export default function App() {
   const [cart, setCart] = useState([
     { ...PRODUCTS[0], quantity: 1 }
   ]);
@@ -162,10 +159,10 @@ export default function Storefront() {
       <header className="border-b border-slate-800 bg-slate-900/90 backdrop-blur-md sticky top-0 z-40 px-6 py-4 flex items-center justify-between gap-4">
         <div className="flex items-center gap-3">
           <div className="w-9 h-9 rounded-xl bg-indigo-600 flex items-center justify-center font-bold text-white text-lg shadow-md shadow-indigo-600/30">
-            D
+            R
           </div>
           <div>
-            <h1 className="font-bold text-lg text-white tracking-tight">DemoStore</h1>
+            <h1 className="font-bold text-lg text-white tracking-tight">DemoStore <span className="text-[10px] font-normal text-slate-400 bg-slate-800 px-2 py-0.5 rounded-full border border-slate-700">React + Vite</span></h1>
             <p className="text-xs text-slate-400">Developer Gear & Equipment</p>
           </div>
         </div>
@@ -397,7 +394,7 @@ export default function Storefront() {
 
       {/* Footer */}
       <footer className="border-t border-slate-800 px-6 py-6 text-center text-xs text-slate-500 font-mono">
-        DemoStore E-Commerce &copy; 2026. All rights reserved.
+        DemoStore React App &copy; 2026. Powered by Vite + React 18.
       </footer>
     </div>
   );

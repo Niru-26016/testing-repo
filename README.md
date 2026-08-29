@@ -6,10 +6,10 @@
 
 ## Technical Architecture
 
-- **Frontend:** Next.js (React 18 + Tailwind CSS + Lucide Icons)
-- **Backend API:** FastAPI (Python 3.11 Serverless Functions)
+- **Frontend:** React 18 + Vite + Tailwind CSS + Lucide Icons (Port 5173)
+- **Backend API:** FastAPI Microservices Architecture (API Gateway on Port 8001, Pricing Service on 8002, Shipping Service on 8003, Inventory Service on 8004)
 - **Production Observer:** Built-in `argus_observer_middleware` intercepting unhandled 500 exceptions, scrubbing sensitive data, and posting telemetry to ARGUS `/webhook/crash`.
-- **Deployment Platform:** Vercel (Unified Next.js + Python Serverless Functions)
+- **Deployment Platform:** Vercel / Standard Container Deployment
 
 ---
 
@@ -17,69 +17,62 @@
 
 ```
 demo_store/
-├── package.json          # Next.js & React dependencies
-├── vercel.json           # Vercel serverless routing (/api/* -> api/index.py)
-├── next.config.js        # Next.js API proxy for local development
+├── package.json          # React & Vite dependencies
+├── vite.config.js        # Vite config with dev server on port 5173 & API proxying
+├── index.html            # Root HTML entry point
 ├── api/
-│   ├── index.py          # FastAPI application & ArgusObserverMiddleware
-│   ├── requirements.txt  # Python serverless dependencies
-│   ├── services/
-│   │   ├── pricing_engine.py  # Cart calculation logic (ZeroDivisionError bug)
-│   │   ├── shipping_engine.py # Shipping calculation logic (KeyError bug)
-│   │   └── inventory_engine.py# Stock allocation logic (IndexError bug)
-│   └── tests/                 # PyTest suite for ARGUS Sandbox Gate
+│   ├── index.py          # Microservices API Gateway & ArgusObserverMiddleware
+│   ├── run_microservices.py # Local runner script for all microservices
+│   ├── microservices/    # Independent FastAPI microservices
+│   │   ├── pricing_service.py   # Cart & discount calculations (ZeroDivision & KeyError bugs)
+│   │   ├── shipping_service.py  # Address & shipping rates (KeyError bug)
+│   │   └── inventory_service.py # Stock allocation (IndexError bug)
+│   └── tests/            # PyTest suite for ARGUS Sandbox Gate
 │       ├── test_pricing.py
 │       └── test_shipping.py
 └── src/
-    └── app/
-        ├── layout.jsx    # Root layout & meta tags
-        ├── globals.css   # Tailwind CSS setup
-        └── page.jsx      # Interactive Storefront & Checkout Drawer
+    ├── main.jsx          # React 18 root entry point
+    ├── App.jsx           # Storefront React application & Cart slide-over
+    └── index.css         # Tailwind CSS setup
 ```
 
 ---
 
 ## Local Development & Testing
 
-### 1. Run Python API Backend
+### 1. Run Python API Microservices Backend
 ```bash
-cd demo_store
-pip install -r api/requirements.txt
-uvicorn api.index:app --port 8001 --reload
+python api/run_microservices.py
 ```
+- **API Gateway:** `http://localhost:8001`
+- **Pricing Service:** `http://localhost:8002`
+- **Shipping Service:** `http://localhost:8003`
+- **Inventory Service:** `http://localhost:8004`
 
-### 2. Run Next.js Storefront Frontend
+### 2. Run React Storefront Frontend
 ```bash
-cd demo_store
 npm install
 npm run dev
 ```
-Open `http://localhost:5174` in your browser.
+Open `http://localhost:5173` in your browser.
 
 ---
 
 ## How to Trigger Production Crashes for ARGUS
 
-1. **Trigger `ZeroDivisionError`:**
+1. **Trigger `KeyError` (Invalid Promo Code):**
+   - Add any product to your cart.
+   - Click **Cart** $\rightarrow$ Enter promo code `INVALID50`.
+   - Click **Place Order & Calculate**.
+   - Throws `KeyError: 'INVALID50'` in `pricing_service.py`.
+
+2. **Trigger `ZeroDivisionError` (100% Promo Code):**
    - Add any product to your cart.
    - Click **Cart** $\rightarrow$ Enter promo code `FREESHIP100`.
    - Click **Place Order & Calculate**.
-   - The Python API hits `pricing_engine.py` line 26 and throws a `ZeroDivisionError`.
-   - `ArgusObserverMiddleware` catches the crash and posts a webhook to ARGUS!
+   - Throws `ZeroDivisionError` in `pricing_service.py`.
 
-2. **Trigger `KeyError`:**
-   - Click **Cart** $\rightarrow$ Clear the Zip Code field in the shipping address form.
+3. **Trigger `KeyError` (Missing Address Field):**
+   - Click **Cart** $\rightarrow$ Clear the Zip Code input in the address form.
    - Click **Place Order & Calculate**.
-   - Throws `KeyError: 'zip_code'` in `shipping_engine.py`.
-
----
-
-## Single-Click Vercel Deployment
-
-1. Install Vercel CLI or connect your GitHub repository to Vercel:
-   ```bash
-   vercel
-   ```
-2. Set Environment Variables in Vercel Dashboard:
-   - `ARGUS_WEBHOOK_URL`: `https://your-argus-backend.com/webhook/crash`
-3. Click Deploy! Vercel automatically deploys both the Next.js Storefront and Python API Serverless functions.
+   - Throws `KeyError: 'zip_code'` in `shipping_service.py`.
