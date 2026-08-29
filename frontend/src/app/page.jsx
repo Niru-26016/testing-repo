@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { 
   ShoppingBag, 
   CheckCircle2, 
@@ -10,9 +10,10 @@ import {
   AlertTriangle,
   Search,
   Star,
-  Sparkles,
-  ShieldAlert,
-  X
+  X,
+  Terminal,
+  AlertOctagon,
+  Sparkles
 } from 'lucide-react';
 
 const PRODUCTS = [
@@ -69,6 +70,24 @@ export default function StorefrontPage() {
   const [checkoutResult, setCheckoutResult] = useState(null);
   const [selectedCategory, setSelectedCategory] = useState("All");
   const [searchQuery, setSearchQuery] = useState("");
+  
+  // Crash state & Toast notifications
+  const [crashLog, setCrashLog] = useState(null);
+  const [toast, setToast] = useState(null);
+
+  // Auto-dismiss toast after 4 seconds
+  useEffect(() => {
+    if (toast) {
+      const timer = setTimeout(() => {
+        setToast(null);
+      }, 4000);
+      return () => clearTimeout(timer);
+    }
+  }, [toast]);
+
+  const showToast = (message, type = 'error') => {
+    setToast({ message, type, id: Date.now() });
+  };
 
   const addToCart = (product) => {
     setCart((prev) => {
@@ -80,6 +99,7 @@ export default function StorefrontPage() {
       }
       return [...prev, { ...product, quantity: 1 }];
     });
+    showToast(`Added "${product.name}" to cart`, 'success');
   };
 
   const removeFromCart = (id) => {
@@ -119,25 +139,55 @@ export default function StorefrontPage() {
 
       const data = await res.json();
 
-      if (!res.ok) {
+      // Scenario 1: Unhandled Production Server Crash (HTTP 500)
+      if (res.status === 500) {
+        const errorDetails = {
+          status: 500,
+          error: data.error || "500 Internal Server Error",
+          message: data.message || "Unhandled Runtime Exception in Checkout Gateway",
+          trace_id: data.trace_id || `tr-${Date.now()}`,
+          timestamp: new Date().toISOString(),
+          promo_code: promoCode
+        };
+        setCrashLog(errorDetails);
+        setCheckoutResult({ error: true, ...errorDetails });
+        return;
+      }
+
+      // Scenario 2: Handled Bad Request / Invalid Promo Code (Post-Fix or 400/422 status)
+      if (!res.ok || data.status === "INVALID_PROMO" || data.status === "ERROR") {
+        setCrashLog(null);
+        showToast("Incorrect or invalid code", "error");
         setCheckoutResult({
           error: true,
-          status: res.status,
-          message: data.message || "Unable to process order pricing. Production exception caught by Argus Observer.",
-          trace_id: data.trace_id
+          message: data.message || "Incorrect or invalid code"
         });
-      } else {
-        setCheckoutResult({
-          error: false,
-          pricing: data.pricing,
-          inventory: data.inventory,
-          shipping: data.shipping
-        });
+        return;
       }
-    } catch (err) {
+
+      // Scenario 3: Code entered but discount is 0 and not matching standard promo codes (Fixed graceful fallback)
+      const enteredCode = promoCode.trim().toUpperCase();
+      if (enteredCode && data.pricing && data.pricing.discount_percent === 0 && !["SAVE10", "SAVE20", "FREESHIP100"].includes(enteredCode)) {
+        showToast("Incorrect or invalid code", "error");
+      } else if (enteredCode && data.pricing && data.pricing.discount_percent > 0) {
+        showToast(`Promo code applied: ${data.pricing.discount_percent}% off!`, "success");
+      }
+
+      // Successful checkout calculation
+      setCrashLog(null);
       setCheckoutResult({
-        error: true,
-        message: "Failed to connect to checkout service. Please verify the backend is running on port 8001."
+        error: false,
+        pricing: data.pricing,
+        inventory: data.inventory,
+        shipping: data.shipping
+      });
+    } catch (err) {
+      // Network failure / server offline
+      setCrashLog({
+        status: "NETWORK_ERROR",
+        error: "Connection Refused",
+        message: "Failed to connect to checkout service. Please ensure the backend is running.",
+        timestamp: new Date().toISOString()
       });
     } finally {
       setLoading(false);
@@ -152,15 +202,94 @@ export default function StorefrontPage() {
   });
 
   return (
-    <div className="min-h-screen bg-slate-50 text-slate-800 flex flex-col font-sans">
+    <div className="min-h-screen bg-slate-50 text-slate-800 flex flex-col font-sans relative">
+      {/* Toast Notification Container */}
+      {toast && (
+        <div className="fixed top-5 right-5 z-50 animate-bounce-in max-w-sm w-full transition-all">
+          <div className={`p-4 rounded-xl shadow-xl border flex items-center justify-between gap-3 ${
+            toast.type === 'error' 
+              ? 'bg-rose-50 border-rose-200 text-rose-900 shadow-rose-900/10' 
+              : 'bg-emerald-50 border-emerald-200 text-emerald-900 shadow-emerald-900/10'
+          }`}>
+            <div className="flex items-center gap-3">
+              {toast.type === 'error' ? (
+                <div className="w-8 h-8 rounded-lg bg-rose-100 flex items-center justify-center flex-shrink-0">
+                  <AlertTriangle className="w-4 h-4 text-rose-600" />
+                </div>
+              ) : (
+                <div className="w-8 h-8 rounded-lg bg-emerald-100 flex items-center justify-center flex-shrink-0">
+                  <CheckCircle2 className="w-4 h-4 text-emerald-600" />
+                </div>
+              )}
+              <div>
+                <p className="text-xs font-semibold">{toast.type === 'error' ? 'Invalid Code' : 'Success'}</p>
+                <p className="text-xs text-slate-700 mt-0.5">{toast.message}</p>
+              </div>
+            </div>
+            <button 
+              onClick={() => setToast(null)}
+              className="p-1 rounded-md hover:bg-black/5 text-slate-400 hover:text-slate-700"
+            >
+              <X className="w-4 h-4" />
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Production Crash Error Banner & Terminal Log (Visible when backend throws 500 error) */}
+      {crashLog && (
+        <div className="bg-rose-600 text-white px-6 py-4 border-b border-rose-700 shadow-lg sticky top-0 z-50">
+          <div className="max-w-7xl mx-auto flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
+            <div className="flex items-start gap-3">
+              <div className="p-2 bg-rose-700 rounded-lg">
+                <AlertOctagon className="w-6 h-6 text-white animate-pulse" />
+              </div>
+              <div>
+                <div className="flex items-center gap-2">
+                  <h3 className="font-bold text-sm tracking-wide">SYSTEM RUNTIME EXCEPTION DETECTED (HTTP 500)</h3>
+                  <span className="bg-rose-800 text-[10px] uppercase font-mono px-2 py-0.5 rounded font-semibold">
+                    Observer Intercepted
+                  </span>
+                </div>
+                <p className="text-xs text-rose-100 mt-0.5 font-mono">
+                  {crashLog.message}
+                </p>
+              </div>
+            </div>
+
+            <div className="flex items-center gap-3">
+              <button
+                onClick={() => setCrashLog(null)}
+                className="bg-white hover:bg-rose-50 text-rose-700 text-xs font-semibold px-4 py-2 rounded-lg transition-colors shadow-sm"
+              >
+                Dismiss Crash Log
+              </button>
+            </div>
+          </div>
+
+          {/* Collapsible Error Trace Details */}
+          <div className="max-w-7xl mx-auto mt-3 pt-3 border-t border-rose-500/60 font-mono text-[11px] bg-rose-950/80 p-3 rounded-lg text-rose-200 overflow-x-auto space-y-1">
+            <div className="flex items-center gap-2 text-rose-300">
+              <Terminal className="w-3.5 h-3.5" />
+              <span className="font-bold">Production Crash Telemetry:</span>
+            </div>
+            <p className="text-rose-100"><span className="text-rose-400">Error:</span> {crashLog.error}</p>
+            <p className="text-rose-100"><span className="text-rose-400">Exception Message:</span> {crashLog.message}</p>
+            {crashLog.trace_id && <p className="text-rose-100"><span className="text-rose-400">Trace ID:</span> {crashLog.trace_id}</p>}
+            <p className="text-rose-400 text-[10px] mt-1 italic">
+              [ARGUS Observer] Telemetry payload dispatched to ARGUS /webhook/crash. Awaiting autonomous fix...
+            </p>
+          </div>
+        </div>
+      )}
+
       {/* Top Utility Bar */}
       <div className="bg-slate-100 border-b border-slate-200 px-6 py-2 flex items-center justify-between text-xs text-slate-600">
         <div className="flex items-center gap-2">
-          <Sparkles className="w-3.5 h-3.5 text-indigo-600" />
-          <span className="font-medium">Next.js Monorepo Target for ARGUS Production Debugger</span>
+          <span>Free worldwide shipping on orders over $50 | 30-Day Money-Back Guarantee</span>
         </div>
         <div className="flex items-center gap-4">
-          <span className="hover:text-slate-900 cursor-pointer transition-colors">Customer Support</span>
+          <span className="hover:text-slate-900 cursor-pointer transition-colors">Support</span>
           <span className="font-mono font-medium">USD ($)</span>
         </div>
       </div>
@@ -172,13 +301,10 @@ export default function StorefrontPage() {
             A
           </div>
           <div>
-            <h1 className="font-bold text-lg text-slate-900 tracking-tight flex items-center gap-2">
-              ArgusStore 
-              <span className="text-[11px] font-semibold text-indigo-700 bg-indigo-50 px-2.5 py-0.5 rounded-full border border-indigo-200">
-                Next.js App
-              </span>
+            <h1 className="font-bold text-lg text-slate-900 tracking-tight">
+              ArgusStore
             </h1>
-            <p className="text-xs text-slate-500">Developer Gear & Equipment</p>
+            <p className="text-xs text-slate-500">Premium Developer Gear & Workspace Equipment</p>
           </div>
         </div>
 
@@ -210,36 +336,21 @@ export default function StorefrontPage() {
 
       {/* Main Content */}
       <main className="flex-1 max-w-7xl w-full mx-auto px-6 py-8 space-y-8">
-        {/* Hero Promotion */}
-        <div className="bg-white border border-indigo-100 p-8 rounded-2xl flex flex-col md:flex-row items-start md:items-center justify-between gap-6 shadow-sm">
-          <div>
-            <span className="text-xs font-bold text-indigo-600 tracking-wider uppercase flex items-center gap-1.5">
-              <ShieldAlert className="w-3.5 h-3.5" /> ARGUS Observer Sandbox Target
+        {/* Clean E-Commerce Hero Banner */}
+        <div className="bg-gradient-to-r from-slate-900 to-indigo-950 text-white p-8 md:p-10 rounded-2xl flex flex-col md:flex-row items-start md:items-center justify-between gap-6 shadow-md">
+          <div className="max-w-xl">
+            <span className="text-xs font-semibold text-indigo-400 tracking-wider uppercase flex items-center gap-1.5 mb-2">
+              <Sparkles className="w-3.5 h-3.5" /> Featured Engineering Collection
             </span>
-            <h2 className="text-2xl font-bold text-slate-900 mt-1">E-Commerce Storefront</h2>
-            <p className="text-xs text-slate-600 mt-2 max-w-xl leading-relaxed">
-              Use promo codes during checkout to test valid discounts or trigger intentional production crashes (<code className="text-indigo-600 bg-indigo-50 px-1 py-0.5 rounded font-mono font-medium">SAVE10</code>, <code className="text-rose-600 bg-rose-50 px-1 py-0.5 rounded font-mono font-medium">INVALID50</code>, or <code className="text-amber-700 bg-amber-50 px-1 py-0.5 rounded font-mono font-medium">FREESHIP100</code>).
+            <h2 className="text-2xl md:text-3xl font-bold tracking-tight">Upgrade Your Coding Environment</h2>
+            <p className="text-xs md:text-sm text-slate-300 mt-2 leading-relaxed">
+              Engineered for productivity, comfort, and focus. Premium mechanical hardware, ultra-wide monitors, and apparel crafted for builders.
             </p>
           </div>
-          <div className="flex flex-wrap gap-2 text-xs font-mono">
-            <button 
-              onClick={() => { setPromoCode("SAVE10"); setIsCheckoutOpen(true); }}
-              className="bg-indigo-50 hover:bg-indigo-100 border border-indigo-200 px-3.5 py-2 rounded-xl text-indigo-700 font-semibold transition-colors shadow-sm"
-            >
-              SAVE10 (10% OFF)
-            </button>
-            <button 
-              onClick={() => { setPromoCode("INVALID50"); setIsCheckoutOpen(true); }}
-              className="bg-rose-50 hover:bg-rose-100 border border-rose-200 px-3.5 py-2 rounded-xl text-rose-700 font-semibold transition-colors shadow-sm"
-            >
-              INVALID50 (KeyError)
-            </button>
-            <button 
-              onClick={() => { setPromoCode("FREESHIP100"); setIsCheckoutOpen(true); }}
-              className="bg-amber-50 hover:bg-amber-100 border border-amber-200 px-3.5 py-2 rounded-xl text-amber-800 font-semibold transition-colors shadow-sm"
-            >
-              FREESHIP100 (ZeroDiv)
-            </button>
+          <div className="bg-white/10 backdrop-blur-md border border-white/20 p-4 rounded-xl text-center flex-shrink-0">
+            <span className="text-[11px] text-indigo-200 block uppercase font-mono">Storewide Offer</span>
+            <p className="text-lg font-bold text-white mt-0.5">Use code <span className="text-emerald-400 font-mono">SAVE10</span></p>
+            <span className="text-[11px] text-slate-300">10% discount on checkout</span>
           </div>
         </div>
 
@@ -353,7 +464,7 @@ export default function StorefrontPage() {
                   </label>
                   <input
                     type="text"
-                    placeholder="Enter coupon code (e.g. SAVE10, INVALID50)"
+                    placeholder="Enter coupon code (e.g. SAVE10)"
                     value={promoCode}
                     onChange={(e) => setPromoCode(e.target.value)}
                     className="w-full bg-white border border-slate-300 rounded-lg px-3 py-2 text-xs text-slate-900 placeholder-slate-400 focus:outline-none focus:border-indigo-500 font-mono uppercase"
@@ -381,32 +492,18 @@ export default function StorefrontPage() {
                 </div>
               </div>
 
-              {/* Standard Customer Response Alert */}
-              {checkoutResult && (
-                <div className={`p-4 rounded-xl text-xs ${checkoutResult.error ? 'bg-rose-50 border border-rose-200 text-rose-900' : 'bg-emerald-50 border border-emerald-200 text-emerald-900'}`}>
-                  {checkoutResult.error ? (
-                    <div className="space-y-1">
-                      <strong className="font-bold flex items-center gap-1.5 text-rose-700">
-                        <AlertTriangle className="w-4 h-4 text-rose-600" /> Checkout Error (Intercepted by Argus)
-                      </strong>
-                      <p className="text-rose-800 leading-relaxed text-[11px]">{checkoutResult.message}</p>
-                      {checkoutResult.trace_id && (
-                        <p className="text-[10px] font-mono text-indigo-700 mt-1">Trace ID: {checkoutResult.trace_id}</p>
-                      )}
-                    </div>
-                  ) : (
-                    <div className="space-y-1">
-                      <strong className="font-bold flex items-center gap-1.5 text-emerald-700">
-                        <CheckCircle2 className="w-4 h-4 text-emerald-600" /> Order Placed Successfully!
-                      </strong>
-                      <p className="text-xs text-slate-700">Total Charged: <span className="font-mono font-bold text-slate-900">${checkoutResult.pricing.total.toFixed(2)}</span></p>
-                      {checkoutResult.pricing.discount_amount > 0 && (
-                        <p className="text-[11px] text-emerald-700 font-medium">Discount Applied: -${checkoutResult.pricing.discount_amount.toFixed(2)}</p>
-                      )}
-                      {checkoutResult.shipping && (
-                        <p className="text-[10px] text-slate-500 font-mono">Carrier: {checkoutResult.shipping.carrier} (${checkoutResult.shipping.shipping_fee})</p>
-                      )}
-                    </div>
+              {/* Order Status Results */}
+              {checkoutResult && !checkoutResult.error && (
+                <div className="p-4 rounded-xl text-xs bg-emerald-50 border border-emerald-200 text-emerald-900 space-y-1">
+                  <strong className="font-bold flex items-center gap-1.5 text-emerald-700">
+                    <CheckCircle2 className="w-4 h-4 text-emerald-600" /> Order Placed Successfully!
+                  </strong>
+                  <p className="text-xs text-slate-700">Total Charged: <span className="font-mono font-bold text-slate-900">${checkoutResult.pricing.total.toFixed(2)}</span></p>
+                  {checkoutResult.pricing.discount_amount > 0 && (
+                    <p className="text-[11px] text-emerald-700 font-medium">Discount Applied: -${checkoutResult.pricing.discount_amount.toFixed(2)}</p>
+                  )}
+                  {checkoutResult.shipping && (
+                    <p className="text-[10px] text-slate-500 font-mono">Carrier: {checkoutResult.shipping.carrier} (${checkoutResult.shipping.shipping_fee})</p>
                   )}
                 </div>
               )}
@@ -433,8 +530,8 @@ export default function StorefrontPage() {
       )}
 
       {/* Footer */}
-      <footer className="border-t border-slate-200 bg-white px-6 py-6 text-center text-xs text-slate-500 font-mono">
-        ArgusStore Target App &copy; 2026. Powered by Next.js App Router + FastAPI Backend.
+      <footer className="border-t border-slate-200 bg-white px-6 py-6 text-center text-xs text-slate-500">
+        ArgusStore &copy; 2026. All rights reserved.
       </footer>
     </div>
   );
