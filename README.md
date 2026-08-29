@@ -1,29 +1,85 @@
-# GitAegis Test Sandbox
+# ArgusStore: Dummy E-Commerce Website for ARGUS Production Observer
 
-This repository is a pre-configured environment for testing the GitAegis CLI assistant.
+> "A real-world e-commerce application designed to demonstrate ARGUS Autonomous Closed-Loop Debugging in production."
 
+---
 
-## Directory Structure
-<!-- git-aegis-structure-start -->
-```plaintext
-project/
-├── README.md # Markdown documentation
-├── run_integration_tests.py # Ensure test repo path is clean
-├── src/
-│   ├── Addition.py # this function adds two numbers
-│   ├── Division.py # this function divides two numbers
-│   ├── Multiplication
-│   ├── Subtraction.py # this function subtracts two numbers
-│   ├── leaked_secrets.py # git-aegis: local-only
-│   └── main.py # Baseline helper function
-└── test_cli_wrapper.py # Ensure the primary codebase is in the python path
+## Technical Architecture
+
+- **Frontend:** Next.js (React 18 + Tailwind CSS + Lucide Icons)
+- **Backend API:** FastAPI (Python 3.11 Serverless Functions)
+- **Production Observer:** Built-in `argus_observer_middleware` intercepting unhandled 500 exceptions, scrubbing sensitive data, and posting telemetry to ARGUS `/webhook/crash`.
+- **Deployment Platform:** Vercel (Unified Next.js + Python Serverless Functions)
+
+---
+
+## Repository Structure
+
 ```
-<!-- git-aegis-structure-end -->
+demo_store/
+├── package.json          # Next.js & React dependencies
+├── vercel.json           # Vercel serverless routing (/api/* -> api/index.py)
+├── next.config.js        # Next.js API proxy for local development
+├── api/
+│   ├── index.py          # FastAPI application & ArgusObserverMiddleware
+│   ├── requirements.txt  # Python serverless dependencies
+│   ├── services/
+│   │   ├── pricing_engine.py  # Cart calculation logic (ZeroDivisionError bug)
+│   │   ├── shipping_engine.py # Shipping calculation logic (KeyError bug)
+│   │   └── inventory_engine.py# Stock allocation logic (IndexError bug)
+│   └── tests/                 # PyTest suite for ARGUS Sandbox Gate
+│       ├── test_pricing.py
+│       └── test_shipping.py
+└── src/
+    └── app/
+        ├── layout.jsx    # Root layout & meta tags
+        ├── globals.css   # Tailwind CSS setup
+        └── page.jsx      # Interactive Storefront & Checkout Drawer
+```
 
-<!-- git-aegis-changelog -->
-* 2026-06-29 21:27:41 - chore(printer): remove printer utility module
-* 2026-06-29 21:27:09 - feat(printer): add module with various printing utility functions
-* 2026-06-15 14:24:44 - docs(changelog): add entry for simulated secret token update
-* 2026-06-15 14:21:08 - chore(leaked-secrets): update simulated secret token value
-* 2026-06-15 14:19:02 - feat(math): add division function and refactor addition script to function
-* 2026-06-15 14:17:23 - feat(arithmetic): add basic arithmetic operations
+---
+
+## Local Development & Testing
+
+### 1. Run Python API Backend
+```bash
+cd demo_store
+pip install -r api/requirements.txt
+uvicorn api.index:app --port 8001 --reload
+```
+
+### 2. Run Next.js Storefront Frontend
+```bash
+cd demo_store
+npm install
+npm run dev
+```
+Open `http://localhost:5173` in your browser.
+
+---
+
+## How to Trigger Production Crashes for ARGUS
+
+1. **Trigger `ZeroDivisionError`:**
+   - Add any product to your cart.
+   - Click **Cart** $\rightarrow$ Enter promo code `FREESHIP100`.
+   - Click **Place Order & Calculate**.
+   - The Python API hits `pricing_engine.py` line 26 and throws a `ZeroDivisionError`.
+   - `ArgusObserverMiddleware` catches the crash and posts a webhook to ARGUS!
+
+2. **Trigger `KeyError`:**
+   - Click **Cart** $\rightarrow$ Clear the Zip Code field in the shipping address form.
+   - Click **Place Order & Calculate**.
+   - Throws `KeyError: 'zip_code'` in `shipping_engine.py`.
+
+---
+
+## Single-Click Vercel Deployment
+
+1. Install Vercel CLI or connect your GitHub repository to Vercel:
+   ```bash
+   vercel
+   ```
+2. Set Environment Variables in Vercel Dashboard:
+   - `ARGUS_WEBHOOK_URL`: `https://your-argus-backend.com/webhook/crash`
+3. Click Deploy! Vercel automatically deploys both the Next.js Storefront and Python API Serverless functions.

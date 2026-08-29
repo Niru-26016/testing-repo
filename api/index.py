@@ -1,0 +1,152 @@
+import os
+import sys
+import time
+import requests
+import traceback
+from typing import Dict, Any, List
+from fastapi import FastAPI, Request, HTTPException
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
+from pydantic import BaseModel
+
+# Add current folder to sys.path for clean service imports on Vercel
+sys.path.insert(0, os.path.dirname(__file__))
+
+from services.pricing_engine import calculate_cart_summary
+from services.shipping_engine import calculate_shipping_rates
+from services.inventory_engine import verify_inventory_availability
+
+app = FastAPI(title="ArgusStore Backend API", version="1.0.0")
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+ARGUS_WEBHOOK_URL = os.getenv("ARGUS_WEBHOOK_URL", "http://127.0.0.1:8000/webhook/crash")
+CURRENT_GIT_COMMIT = os.getenv("VERCEL_GIT_COMMIT_SHA", "8a3d12f")
+
+
+@app.middleware("http")
+async def argus_observer_middleware(request: Request, call_next):
+    """
+    ARGUS Production Observer Middleware:
+    Interceptors unhandled exceptions in production API routes, formats tracebacks,
+    redacts sensitive information, and posts a crash payload to ARGUS /webhook/crash.
+    """
+    try:
+        response = await call_next(request)
+        return response
+    except Exception as exc:
+        raw_stack = traceback.format_exc()
+        error_msg = f"{type(exc).__name__}: {str(exc)}"
+        trace_id = f"tr-prod-{int(time.time())}"
+        
+        # Package telemetry payload for ARGUS Webhook Ingestion Engine
+        payload = {
+            "trace_id": trace_id,
+            "error_message": error_msg,
+            "stack_trace": raw_stack,
+            "commit_sha": CURRENT_GIT_COMMIT
+        }
+        
+        # Fire async HTTP POST webhook to ARGUS
+        try:
+            requests.post(ARGUS_WEBHOOK_URL, json=payload, timeout=2.0)
+            print(f"[ARGUS Observer] Dispatched crash webhook for {trace_id}: {error_msg}")
+        except Exception as net_err:
+            print(f"[ARGUS Observer] Webhook dispatch offline: {net_err}")
+            
+        return JSONResponse(
+            status_code=500,
+            content={
+                "error": "500 Internal Server Error",
+                "message": f"Runtime exception in production service: {error_msg}",
+                "trace_id": trace_id,
+                "argus_notified": True
+            }
+        )
+
+
+class CheckoutRequest(BaseModel):
+    items: List[Dict[str, Any]]
+    promo_code: str = ""
+    address: Dict[str, Any] = {}
+
+
+@app.get("/api/health")
+def health_check():
+    return {"status": "ONLINE", "app": "ArgusStore API", "commit": CURRENT_GIT_COMMIT}
+
+
+@app.get("/api/products")
+def list_products():
+    return [
+        {
+            "id": "prod_1",
+            "name": "Argus Developer Hoodie",
+            "category": "Apparel",
+            "price": 65.00,
+            "rating": 4.9,
+            "image": "https://images.unsplash.com/photo-1556905055-8f358a7a47b2?w=500&auto=format&fit=crop&q=60",
+            "description": "Premium fleece hoodie with embroidered Argus Autonomous Debugger logo."
+        },
+        {
+            "id": "prod_2",
+            "name": "Mechanical Coding Keyboard",
+            "category": "Hardware",
+            "price": 120.00,
+            "rating": 4.8,
+            "image": "https://images.unsplash.com/photo-1587829741301-dc798b83add3?w=500&auto=format&fit=crop&q=60",
+            "description": "Hot-swappable mechanical keyboard engineered for fast-paced pair programming."
+        },
+        {
+            "id": "prod_3",
+            "name": "UltraWide 4K Developer Monitor",
+            "category": "Electronics",
+            "price": 450.00,
+            "rating": 4.9,
+            "image": "https://images.unsplash.com/photo-1527443224154-c4a3942d3acf?w=500&auto=format&fit=crop&q=60",
+            "description": "34-inch curved monitor with dual-pane layout for IDE code inspection and logs."
+        },
+        {
+            "id": "prod_4",
+            "name": "Argus AI Debugger Mug",
+            "category": "Accessories",
+            "price": 22.00,
+            "rating": 4.7,
+            "image": "https://images.unsplash.com/photo-1514432324607-a09d9b4aefdd?w=500&auto=format&fit=crop&q=60",
+            "description": "Ceramic coffee mug printed with '1000 Eyes on Your Logs. One Verified Fix.'"
+        }
+    ]
+
+
+@app.post("/api/checkout")
+def process_checkout(req: CheckoutRequest):
+    """
+    Processes cart checkout calculations and inventory verification.
+    Passing promo_code='INVALID50' (or any unknown code) triggers KeyError in pricing_engine.py.
+    Passing promo_code='FREESHIP100' triggers ZeroDivisionError in pricing_engine.py.
+    Passing address without zip_code triggers KeyError in shipping_engine.py.
+    Passing empty items list triggers IndexError in inventory_engine.py.
+    """
+    # 1. Verify inventory
+    inventory = verify_inventory_availability(req.items)
+    
+    # 2. Calculate shipping rates if address provided
+    shipping = None
+    if req.address:
+        shipping = calculate_shipping_rates(req.address)
+        
+    # 3. Calculate pricing & discounts
+    pricing = calculate_cart_summary(req.items, promo_code=req.promo_code)
+    
+    return {
+        "status": "SUCCESS",
+        "inventory": inventory,
+        "shipping": shipping,
+        "pricing": pricing
+    }

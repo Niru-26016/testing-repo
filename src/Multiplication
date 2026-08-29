@@ -1,3 +1,0 @@
-def multiplication(a,b):
-    '''this function multiplies two numbers'''
-    return a * b
