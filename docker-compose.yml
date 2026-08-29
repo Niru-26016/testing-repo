@@ -13,6 +13,8 @@ services:
       - HOST=0.0.0.0
       - ARGUS_WEBHOOK_URL=http://host.docker.internal:8000/webhook/crash
       - VERCEL_GIT_COMMIT_SHA=8a3d12f
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     restart: unless-stopped
 
   frontend:
