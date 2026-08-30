@@ -35,10 +35,10 @@ jobs:
           test -n "$VM_SSH_KEY"
           port="${VM_PORT:-22}"
           install -d -m 700 ~/.ssh
-          printf '%s\\n' "$VM_SSH_KEY" > ~/.ssh/testing_repo_vm
+          printf '%s\n' "$VM_SSH_KEY" > ~/.ssh/testing_repo_vm
           chmod 600 ~/.ssh/testing_repo_vm
           ssh-keyscan -p "$port" -H "$VM_HOST" >> ~/.ssh/known_hosts
-          printf 'VM_PORT=%s\\n' "$port" >> "$GITHUB_ENV"
+          printf 'VM_PORT=%s\n' "$port" >> "$GITHUB_ENV"
 
       - name: Upload the checked-out release without VM secrets
         env:
@@ -48,13 +48,13 @@ jobs:
         run: |
           set -euo pipefail
           remote_dir="${VM_DEPLOY_DIR:-/home/ubuntu/testing-repo}"
-          tar \\
-            --exclude=.git \\
-            --exclude=.env \\
-            --exclude=frontend/node_modules \\
-            --exclude=frontend/dist \\
-            --exclude='**/__pycache__' \\
-            -cf - . | ssh -o BatchMode=yes -i ~/.ssh/testing_repo_vm -p "$VM_PORT" "$VM_USER@$VM_HOST" \\
+          tar \
+            --exclude=.git \
+            --exclude=.env \
+            --exclude=frontend/node_modules \
+            --exclude=frontend/dist \
+            --exclude='**/__pycache__' \
+            -cf - . | ssh -o BatchMode=yes -i ~/.ssh/testing_repo_vm -p "$VM_PORT" "$VM_USER@$VM_HOST" \
             "mkdir -p '$remote_dir' && tar -xf - -C '$remote_dir'"
 
       - name: Rebuild and verify the deployed release
