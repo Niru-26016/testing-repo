@@ -6,6 +6,13 @@ on:
       - main
   workflow_dispatch:
 
+permissions:
+  contents: read
+
+concurrency:
+  group: testing-repo-vm-deploy
+  cancel-in-progress: false
+
 jobs:
   deploy:
     name: Deploy to Cloud VM
@@ -15,30 +22,78 @@ jobs:
       - name: Checkout Code
         uses: actions/checkout@v4
 
-      - name: Deploy via SSH
-        uses: appleboy/ssh-action@v1.0.3
-        with:
-          host: ${{ secrets.VM_HOST }}
-          username: ${{ secrets.VM_USER }}
-          key: ${{ secrets.VM_SSH_KEY }}
-          port: 22
-          script: |
-            set -e
-            echo "🚀 Starting deployment on VM..."
-            cd ~/testing-repo
+      - name: Configure SSH
+        env:
+          VM_HOST: ${{ secrets.VM_HOST }}
+          VM_USER: ${{ secrets.VM_USER }}
+          VM_SSH_KEY: ${{ secrets.VM_SSH_KEY }}
+          VM_PORT: ${{ vars.VM_SSH_PORT }}
+        run: |
+          set -euo pipefail
+          test -n "$VM_HOST"
+          test -n "$VM_USER"
+          test -n "$VM_SSH_KEY"
+          port="${VM_PORT:-22}"
+          install -d -m 700 ~/.ssh
+          printf '%s\\n' "$VM_SSH_KEY" > ~/.ssh/testing_repo_vm
+          chmod 600 ~/.ssh/testing_repo_vm
+          ssh-keyscan -p "$port" -H "$VM_HOST" >> ~/.ssh/known_hosts
+          printf 'VM_PORT=%s\\n' "$port" >> "$GITHUB_ENV"
 
-            # Fetch latest updates from origin & upstream
-            git fetch --all --prune
+      - name: Upload the checked-out release without VM secrets
+        env:
+          VM_HOST: ${{ secrets.VM_HOST }}
+          VM_USER: ${{ secrets.VM_USER }}
+          VM_DEPLOY_DIR: ${{ vars.VM_DEPLOY_DIR }}
+        run: |
+          set -euo pipefail
+          remote_dir="${VM_DEPLOY_DIR:-/home/ubuntu/testing-repo}"
+          tar \\
+            --exclude=.git \\
+            --exclude=.env \\
+            --exclude=frontend/node_modules \\
+            --exclude=frontend/dist \\
+            --exclude='**/__pycache__' \\
+            -cf - . | ssh -o BatchMode=yes -i ~/.ssh/testing_repo_vm -p "$VM_PORT" "$VM_USER@$VM_HOST" \\
+            "mkdir -p '$remote_dir' && tar -xf - -C '$remote_dir'"
 
-            # Sync with the latest commit on main
-            git checkout main
-            git pull origin main || git pull upstream main
+      - name: Rebuild and verify the deployed release
+        env:
+          VM_HOST: ${{ secrets.VM_HOST }}
+          VM_USER: ${{ secrets.VM_USER }}
+          VM_DEPLOY_DIR: ${{ vars.VM_DEPLOY_DIR }}
+        run: |
+          set -euo pipefail
+          remote_dir="${VM_DEPLOY_DIR:-/home/ubuntu/testing-repo}"
+          ssh -o BatchMode=yes -i ~/.ssh/testing_repo_vm -p "$VM_PORT" "$VM_USER@$VM_HOST" "DEPLOY_DIR='$remote_dir' bash -s" <<'REMOTE'
+          set -euo pipefail
+          cd "$DEPLOY_DIR"
 
-            # Rebuild and restart containers
-            echo "🔄 Rebuilding and restarting Docker containers..."
-            docker compose up -d --build
+          docker_cmd=(docker)
+          if ! docker info >/dev/null 2>&1; then
+            if sudo -n docker info >/dev/null 2>&1; then
+              docker_cmd=(sudo -n docker)
+            else
+              echo "Docker is unavailable to $USER and passwordless sudo cannot access it." >&2
+              exit 1
+            fi
+          fi
 
-            # Clean up old unused Docker images to save disk space
-            docker image prune -f
+          "${docker_cmd[@]}" compose config >/dev/null
+          "${docker_cmd[@]}" compose up -d --build --remove-orphans
+          "${docker_cmd[@]}" compose ps
 
-            echo "✅ Deployment completed successfully! Live on http://${{ secrets.VM_HOST }}"
+          for attempt in $(seq 1 30); do
+            if curl --fail --silent --max-time 5 http://127.0.0.1:3000/ >/dev/null; then
+              echo "Deployment health check passed on http://127.0.0.1:3000/"
+              exit 0
+            fi
+            if [[ "$attempt" -lt 30 ]]; then
+              sleep 2
+            fi
+          done
+
+          "${docker_cmd[@]}" compose logs --tail=100 >&2 || true
+          echo "Deployment health check failed on http://127.0.0.1:3000/" >&2
+          exit 1
+          REMOTE
