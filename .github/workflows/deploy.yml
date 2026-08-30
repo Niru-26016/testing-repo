@@ -54,7 +54,7 @@ jobs:
             --exclude=frontend/node_modules \
             --exclude=frontend/dist \
             --exclude='**/__pycache__' \
-            -cf - . | ssh -o BatchMode=yes -i ~/.ssh/testing_repo_vm -p "$VM_PORT" "$VM_USER@$VM_HOST" \
+            -cf - . | ssh -o BatchMode=yes -o ServerAliveInterval=30 -o ServerAliveCountMax=20 -o ConnectTimeout=30 -i ~/.ssh/testing_repo_vm -p "$VM_PORT" "$VM_USER@$VM_HOST" \
             "mkdir -p '$remote_dir' && tar -xf - -C '$remote_dir'"
 
       - name: Rebuild and verify the deployed release
@@ -65,7 +65,7 @@ jobs:
         run: |
           set -euo pipefail
           remote_dir="${VM_DEPLOY_DIR:-/home/ubuntu/testing-repo}"
-          ssh -o BatchMode=yes -i ~/.ssh/testing_repo_vm -p "$VM_PORT" "$VM_USER@$VM_HOST" "DEPLOY_DIR='$remote_dir' bash -s" <<'REMOTE'
+          ssh -o BatchMode=yes -o ServerAliveInterval=30 -o ServerAliveCountMax=20 -o ConnectTimeout=30 -i ~/.ssh/testing_repo_vm -p "$VM_PORT" "$VM_USER@$VM_HOST" "DEPLOY_DIR='$remote_dir' bash -s" <<'REMOTE'
           set -euo pipefail
           cd "$DEPLOY_DIR"
 
