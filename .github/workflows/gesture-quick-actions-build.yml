@@ -13,9 +13,12 @@ jobs:
       - name: Checkout build branch
         uses: actions/checkout@v4
 
-      - name: Decode project source
+      - name: Reconstruct and verify project source
         run: |
-          base64 -d gesture-quick-actions-source.zip.b64 > gesture-quick-actions-source.zip
+          cat gqa/chunk-01.b64 gqa/chunk-02.b64 gqa/chunk-03.b64 gqa/chunk-04.b64 gqa/chunk-05.b64 > source.b64
+          test "$(wc -c < source.b64)" -eq 26996
+          base64 -d source.b64 > gesture-quick-actions-source.zip
+          echo "74c36d8917cc845c20436e34d588e10e7086e3d9f14c54c8e927bae11a1920b2  gesture-quick-actions-source.zip" | sha256sum -c -
           mkdir -p extracted
           unzip -q gesture-quick-actions-source.zip -d extracted
 
