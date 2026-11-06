@@ -18,9 +18,16 @@ public final class AudioProcessor {
     public static final String CAVE = "Cave";
     public static final String WHISPER = "Whisper";
     public static final String RADIO = "Radio";
+    public static final String MAN = "Man";
+    public static final String WOMAN = "Woman";
+    public static final String CHILD = "Child";
+    public static final String MONSTER = "Monster";
+    public static final String GHOST = "Ghost";
+    public static final String CHIPMUNK = "Chipmunk";
 
     public static final String[] EFFECTS = {
-            CLEAN, DEEP, HELIUM, ROBOT, ALIEN, WHISPER,
+            CLEAN, MAN, WOMAN, CHILD, MONSTER, GHOST,
+            DEEP, HELIUM, ROBOT, ALIEN, CHIPMUNK, WHISPER,
             ECHO, CAVE, RADIO, TELEPHONE, MEGAPHONE, DISTORTION
     };
 
@@ -116,6 +123,30 @@ public final class AudioProcessor {
                 robotPhase = wrapAngle(robotPhase + 2.0 * Math.PI * 72.0 / rate);
             } else if (DISTORTION.equals(effect)) {
                 y = Math.tanh(y * 7.0) * 0.88;
+            } else if (MAN.equals(effect)) {
+                y = pitchShift(0.84);
+                lowPass += 0.17 * (y - lowPass);
+                y = 0.84 * y + 0.16 * lowPass;
+            } else if (WOMAN.equals(effect)) {
+                y = pitchShift(1.22);
+                lowPass += 0.12 * (y - lowPass);
+                y = 1.08 * y - 0.08 * lowPass;
+            } else if (CHILD.equals(effect)) {
+                y = pitchShift(1.48);
+                lowPass += 0.09 * (y - lowPass);
+                y = 1.07 * y - 0.07 * lowPass;
+            } else if (MONSTER.equals(effect)) {
+                robotPhase = wrapAngle(robotPhase + 2.0 * Math.PI * 25.0 / rate);
+                y = Math.tanh(pitchShift(0.64) * 2.4)
+                        * (0.80 + 0.20 * Math.cos(robotPhase));
+            } else if (GHOST.equals(effect)) {
+                float delayed = caveBuffer[caveIndex];
+                caveBuffer[caveIndex] = (float) clip(x + delayed * 0.40);
+                y = pitchShift(1.09) * 0.70 + delayed * 0.25;
+                radioPhase = wrapAngle(radioPhase + 2.0 * Math.PI * 3.4 / rate);
+                y *= 0.79 + 0.21 * Math.sin(radioPhase);
+            } else if (CHIPMUNK.equals(effect)) {
+                y = pitchShift(1.69);
             } else if (DEEP.equals(effect)) {
                 y = pitchShift(0.76);
                 // Warm up the lower register slightly.

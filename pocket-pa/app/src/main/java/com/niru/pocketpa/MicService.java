@@ -15,6 +15,7 @@ import android.media.AudioManager;
 import android.media.AudioRecord;
 import android.media.AudioTrack;
 import android.media.MediaRecorder;
+import android.media.audiofx.AcousticEchoCanceler;
 import android.os.Build;
 import android.os.IBinder;
 import android.os.Process;
@@ -30,6 +31,7 @@ public final class MicService extends Service {
     public static final String EXTRA_EFFECT = "effect";
     public static final String EXTRA_GATE = "gate";
     public static final String EXTRA_SENSITIVITY = "sensitivity";
+    public static final String EXTRA_ECHO_REDUCTION = "reduce_echo";
 
     public static volatile boolean running = false;
     public static volatile String lastError = null;
@@ -39,6 +41,7 @@ public final class MicService extends Service {
     private static volatile String effect = AudioProcessor.CLEAN;
     private static volatile boolean gate = false;
     private static volatile int sensitivity = 55;
+    private static volatile boolean reduceEcho = true;
 
     private static final int RATE = 48000;
     private static final int NOTIFICATION_ID = 101;
@@ -97,6 +100,7 @@ public final class MicService extends Service {
         if (newEffect != null) effect = newEffect;
         gate = intent.getBooleanExtra(EXTRA_GATE, gate);
         sensitivity = Math.max(0, Math.min(100, intent.getIntExtra(EXTRA_SENSITIVITY, sensitivity)));
+        reduceEcho = intent.getBooleanExtra(EXTRA_ECHO_REDUCTION, reduceEcho);
     }
 
     private Notification buildNotification() {
@@ -122,6 +126,7 @@ public final class MicService extends Service {
         Process.setThreadPriority(Process.THREAD_PRIORITY_AUDIO);
         AudioRecord record = null;
         AudioTrack speaker = null;
+        AcousticEchoCanceler echoCanceler = null;
         try {
             int inFormat = AudioFormat.CHANNEL_IN_MONO;
             int outFormat = AudioFormat.CHANNEL_OUT_MONO;
@@ -133,12 +138,28 @@ public final class MicService extends Service {
             AudioFormat recordFormat = new AudioFormat.Builder()
                     .setEncoding(encoding).setSampleRate(RATE).setChannelMask(inFormat).build();
             record = new AudioRecord.Builder()
-                    .setAudioSource(MediaRecorder.AudioSource.MIC)
+                    .setAudioSource(reduceEcho && AcousticEchoCanceler.isAvailable()
+                            ? MediaRecorder.AudioSource.VOICE_COMMUNICATION
+                            : MediaRecorder.AudioSource.MIC)
                     .setAudioFormat(recordFormat)
                     .setBufferSizeInBytes(Math.max(minIn * 2, 4096))
                     .build();
             if (record.getState() != AudioRecord.STATE_INITIALIZED) {
                 throw new IllegalStateException("Microphone could not initialize");
+            }
+            // Optional platform echo canceller on the microphone audio session.
+            // Bluetooth A2DP may not supply a usable playback reference.
+            if (AcousticEchoCanceler.isAvailable()) {
+                try {
+                    echoCanceler = AcousticEchoCanceler.create(record.getAudioSessionId());
+                    if (echoCanceler != null) echoCanceler.setEnabled(reduceEcho);
+                } catch (RuntimeException e) {
+                    if (echoCanceler != null) {
+                        echoCanceler.release();
+                        echoCanceler = null;
+                    }
+                    Log.w("InstantMic", "Echo cancellation unavailable", e);
+                }
             }
 
             AudioAttributes attributes = new AudioAttributes.Builder()
@@ -168,7 +189,13 @@ public final class MicService extends Service {
             short[] samples = new short[480]; // 10ms PCM chunks; codec buffering still applies.
             record.startRecording();
             speaker.play();
+            boolean lastEchoSetting = reduceEcho;
             while (active && !Thread.currentThread().isInterrupted()) {
+                if (echoCanceler != null && lastEchoSetting != reduceEcho) {
+                    try { echoCanceler.setEnabled(reduceEcho); }
+                    catch (RuntimeException e) { Log.w("InstantMic", "AEC setting could not change", e); }
+                    lastEchoSetting = reduceEcho;
+                }
                 int count = record.read(samples, 0, samples.length, AudioRecord.READ_BLOCKING);
                 if (count == AudioRecord.ERROR_DEAD_OBJECT) {
                     throw new IllegalStateException("Microphone was disconnected");
@@ -201,6 +228,9 @@ public final class MicService extends Service {
             active = false;
             running = false;
             audioLevel = 0f;
+            if (echoCanceler != null) {
+                try { echoCanceler.release(); } catch (RuntimeException ignored) { }
+            }
             if (record != null) {
                 try { if (record.getRecordingState() == AudioRecord.RECORDSTATE_RECORDING) record.stop(); }
                 catch (Exception ignored) { }

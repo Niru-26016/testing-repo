@@ -2,7 +2,7 @@
 
 **App title:** Instant Mic: Phone to Speaker
 
-**Short description:** Turn your phone into a Bluetooth mic with 12 fun voice effects.
+**Short description:** Turn your phone into a Bluetooth mic with 18 fun voice effects.
 
 ## Full description
 
@@ -13,7 +13,8 @@ Instant Mic turns your Android phone into a live microphone for your Bluetooth s
 Features:
 - Start and stop live microphone audio with one tap
 - Use your connected Bluetooth speaker or another media output
-- 12 live voice effects: Clean, Deep, Helium, Robot, Alien, Whisper, Echo, Cave, Radio, Telephone, Megaphone and Distortion
+- 18 live voice effects: Clean, Man, Woman, Child, Monster, Ghost, Deep, Helium, Robot, Alien, Chipmunk, Whisper, Echo, Cave, Radio, Telephone, Megaphone and Distortion
+- Optional device-dependent acoustic echo cancellation
 - Mic input gain, speaker output gain, and noise-gate controls
 - Live microphone level meter
 - Foreground notification with a Stop control

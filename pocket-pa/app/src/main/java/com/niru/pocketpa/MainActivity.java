@@ -39,9 +39,10 @@ public final class MainActivity extends Activity {
     private static final int WHITE = Color.rgb(247, 250, 253);
     private static final int MUTED = Color.rgb(155, 171, 191);
     private static final int RED = Color.rgb(255, 124, 132);
-    private static final String[] ICONS = {"◉", "↓", "↑", "▦", "✦", "〰", "↝", "◎", "◈", "☎", "⚡", "◆"};
+    private static final String[] ICONS = {"◉", "↓", "↑", "♬", "☠", "◈", "↓", "↑", "▦", "✦", "★", "〰", "↝", "◎", "◈", "☎", "⚡", "◆"};
     private static final String[] DESCRIPTIONS = {
-            "Natural voice", "Lower pitch", "Higher pitch", "Metallic", "Sci-fi", "Breathy",
+            "Natural voice", "Low male-style", "Higher female-style", "Little kid", "Scary growl", "Spooky floating",
+            "Deep bass", "Funny high pitch", "Metallic", "Sci-fi wobble", "Cartoon squeak", "Breathy",
             "Repeating tail", "Big reverb", "Vintage sound", "Narrow-band", "Loud & gritty", "Overdrive"
     };
     private static final int REQUEST_AUDIO = 100;
@@ -70,6 +71,7 @@ public final class MainActivity extends Activity {
     private int sensitivity;
     private String selectedEffect;
     private boolean noiseGate;
+    private boolean reduceEcho;
     private boolean lastRunning = false;
 
     @Override public void onCreate(Bundle state) {
@@ -80,6 +82,7 @@ public final class MainActivity extends Activity {
         sensitivity = prefs.getInt("sensitivity", 55);
         selectedEffect = prefs.getString("effect", AudioProcessor.CLEAN);
         noiseGate = prefs.getBoolean("gate", false);
+        reduceEcho = prefs.getBoolean("reduce_echo", true);
         micPercent = Math.max(0, Math.min(200, micPercent));
         outputPercent = Math.max(0, Math.min(150, outputPercent));
         sensitivity = Math.max(0, Math.min(100, sensitivity));
@@ -121,7 +124,7 @@ public final class MainActivity extends Activity {
         LinearLayout.LayoutParams identityLp = new LinearLayout.LayoutParams(0, -2, 1);
         identityLp.leftMargin = dp(13);
         header.addView(identity, identityLp);
-        TextView version = label("V2.0", 10, LIME, Typeface.BOLD);
+        TextView version = label("V2.2", 10, LIME, Typeface.BOLD);
         version.setGravity(Gravity.CENTER);
         version.setBackground(round(PANEL_LIGHT, 11, null));
         header.addView(version, new LinearLayout.LayoutParams(dp(47), dp(30)));
@@ -209,7 +212,7 @@ public final class MainActivity extends Activity {
         }
         gap(page, 27);
 
-        section(page, "VOICE STUDIO", "Make every word sound different", "Tap an effect to apply it live");
+        section(page, "VOICE STUDIO", "Choose your live voice", "18 voice styles • switch instantly while speaking");
         gap(page, 15);
         String[] effects = AudioProcessor.EFFECTS;
         for (int i = 0; i < effects.length; i += 2) {
@@ -267,7 +270,7 @@ public final class MainActivity extends Activity {
         });
         gap(page, 24);
 
-        section(page, "FEEDBACK CONTROL", "Less noise, clearer speech", "For rooms with speakers nearby");
+        section(page, "FEEDBACK CONTROL", "Less echo, clearer speech", "Noise gate and device echo cancellation");
         gap(page, 15);
         LinearLayout feedback = card(page);
         LinearLayout switchRow = horizontal(Gravity.CENTER_VERTICAL);
@@ -285,6 +288,30 @@ public final class MainActivity extends Activity {
             noiseGate = checked;
             saveSettings();
         });
+        gap(feedback, 18);
+        LinearLayout echoRow = horizontal(Gravity.CENTER_VERTICAL);
+        LinearLayout echoCopy = vertical();
+        echoCopy.addView(label("Reduce speaker echo", 16, WHITE, Typeface.BOLD));
+        gap(echoCopy, 3);
+        boolean supportsAec = android.media.audiofx.AcousticEchoCanceler.isAvailable();
+        echoCopy.addView(label(supportsAec
+                        ? "Android echo canceller (device-dependent)"
+                        : "Not available on this phone", 12, MUTED, Typeface.NORMAL));
+        echoRow.addView(echoCopy, new LinearLayout.LayoutParams(0, -2, 1));
+        Switch echoSwitch = new Switch(this);
+        echoSwitch.setEnabled(supportsAec);
+        echoSwitch.setChecked(supportsAec && reduceEcho);
+        echoSwitch.setThumbTintList(new ColorStateList(
+                new int[][]{new int[]{android.R.attr.state_checked}, new int[]{}},
+                new int[]{LIME, MUTED}));
+        echoRow.addView(echoSwitch);
+        feedback.addView(echoRow);
+        echoSwitch.setOnCheckedChangeListener((compound, checked) -> {
+            reduceEcho = checked;
+            saveSettings();
+        });
+        gap(feedback, 12);
+        feedback.addView(label("Echo reduction works best after stopping and restarting the mic. Bluetooth delay can defeat cancellation.", 12, MUTED, Typeface.NORMAL));
         gap(feedback, 20);
         TextView gateValue = label(sensitivity + "%", 14, LIME, Typeface.BOLD);
         addSlider(feedback, "GATE SENSITIVITY", "Higher catches softer voices", gateValue, sensitivity, 100, value -> {
@@ -299,7 +326,7 @@ public final class MainActivity extends Activity {
         tipCard.setBackground(round(Color.rgb(33, 34, 45), 18, Color.rgb(74, 68, 89)));
         tipCard.addView(label("✧  SOUND CHECK TIP", 12, PURPLE, Typeface.BOLD));
         gap(tipCard, 8);
-        TextView hint = label("Keep your phone away from the speaker to avoid feedback. Bluetooth has built-in delay; wired output usually responds faster.", 13, MUTED, Typeface.NORMAL);
+        TextView hint = label("Keep the speaker 2+ metres away and pointed away from the phone. Start with speaker output at 40–60% and mic gain at 80–100%. Select Clean, Man, Woman or Child instead of Echo/Cave. Bluetooth delay varies by device.", 13, MUTED, Typeface.NORMAL);
         hint.setLineSpacing(dp(3), 1f);
         tipCard.addView(hint);
         page.addView(tipCard);
@@ -351,12 +378,14 @@ public final class MainActivity extends Activity {
                 .putExtra(MicService.EXTRA_OUTPUT, outputPercent / 100f)
                 .putExtra(MicService.EXTRA_EFFECT, selectedEffect)
                 .putExtra(MicService.EXTRA_GATE, noiseGate)
+                .putExtra(MicService.EXTRA_ECHO_REDUCTION, reduceEcho)
                 .putExtra(MicService.EXTRA_SENSITIVITY, sensitivity);
     }
 
     private void saveSettings() {
         prefs.edit().putInt("mic", micPercent).putInt("out", outputPercent)
                 .putString("effect", selectedEffect).putBoolean("gate", noiseGate)
+                .putBoolean("reduce_echo", reduceEcho)
                 .putInt("sensitivity", sensitivity).apply();
         if (MicService.running) startService(settingsIntent(MicService.ACTION_UPDATE));
     }

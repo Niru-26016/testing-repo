@@ -1,4 +1,4 @@
-name: Instant Mic 2.1 - APK and Play Bundle
+name: Instant Mic 2.2 - APK and Play Bundle
 on:
   push:
     branches: [bluetooth-mic-app]
@@ -51,21 +51,21 @@ jobs:
         run: gradle --no-daemon :app:assembleDebug :app:bundleRelease
       - name: Package release files
         run: |
-          cp app/build/outputs/apk/debug/app-debug.apk InstantMic-v2.1-debug.apk
+          cp app/build/outputs/apk/debug/app-debug.apk InstantMic-v2.2-debug.apk
           if [ -f upload-key.jks ]; then
-            cp app/build/outputs/bundle/release/app-release.aab InstantMic-v2.1-signed-release.aab
+            cp app/build/outputs/bundle/release/app-release.aab InstantMic-v2.2-signed-release.aab
           else
-            cp app/build/outputs/bundle/release/app-release.aab InstantMic-v2.1-UNSIGNED-release.aab
+            cp app/build/outputs/bundle/release/app-release.aab InstantMic-v2.2-UNSIGNED-release.aab
           fi
       - uses: actions/upload-artifact@v4
         with:
-          name: InstantMic-v2.1-Debug-APK
-          path: pocket-pa/InstantMic-v2.1-debug.apk
+          name: InstantMic-v2.2-Debug-APK
+          path: pocket-pa/InstantMic-v2.2-debug.apk
           if-no-files-found: error
           retention-days: 30
       - uses: actions/upload-artifact@v4
         with:
-          name: InstantMic-v2.1-Play-Bundle
-          path: pocket-pa/InstantMic-v2.1-*.aab
+          name: InstantMic-v2.2-Play-Bundle
+          path: pocket-pa/InstantMic-v2.2-*.aab
           if-no-files-found: error
           retention-days: 30

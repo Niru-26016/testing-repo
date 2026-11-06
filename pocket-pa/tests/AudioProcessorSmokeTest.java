@@ -17,6 +17,8 @@ public final class AudioProcessorSmokeTest {
             }
             if (magnitude < 10000) throw new AssertionError("Preset silenced output: " + mode);
         }
+        if (AudioProcessor.EFFECTS.length != 18)
+            throw new AssertionError("Expected 18 live presets");
         AudioProcessor processor = new AudioProcessor(48000);
         short[] silence = new short[480];
         processor.process(silence, silence.length, 1, 1, AudioProcessor.CLEAN, true, 50);
