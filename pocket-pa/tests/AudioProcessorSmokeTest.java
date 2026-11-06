@@ -1,28 +1,34 @@
 package com.niru.pocketpa;
 
+/** Runs on JDK with no Android dependency. */
 public final class AudioProcessorSmokeTest {
     public static void main(String[] args) {
-        AudioProcessor processor = new AudioProcessor(48000);
-        short[] samples = new short[480];
-        String[] modes = {AudioProcessor.CLEAN, AudioProcessor.ECHO,
-                AudioProcessor.MEGAPHONE, AudioProcessor.TELEPHONE,
-                AudioProcessor.ROBOT, AudioProcessor.DISTORTION};
-        for (String mode : modes) {
-            for (int i = 0; i < samples.length; i++) {
-                samples[i] = (short) (Math.sin(i * 2 * Math.PI * 440 / 48000) * 12000);
-            }
-            processor.process(samples, samples.length, 1, 1, mode, false, 65);
+        for (String mode : AudioProcessor.EFFECTS) {
+            AudioProcessor processor = new AudioProcessor(48000);
             long magnitude = 0;
-            for (short s : samples) magnitude += Math.abs((long) s);
-            if (magnitude == 0) throw new AssertionError("Effect silenced output: " + mode);
+            for (int frame = 0; frame < 55; frame++) {
+                short[] samples = new short[480];
+                for (int i = 0; i < samples.length; i++) {
+                    int index = frame * samples.length + i;
+                    samples[i] = (short) (Math.sin(index * 2 * Math.PI * 440 / 48000) * 12000);
+                }
+                processor.process(samples, samples.length, 1, 1, mode, false, 65);
+                if (frame > 5) for (short s : samples) magnitude += Math.abs((long) s);
+            }
+            if (magnitude < 10000) throw new AssertionError("Preset silenced output: " + mode);
         }
+        AudioProcessor processor = new AudioProcessor(48000);
         short[] silence = new short[480];
         processor.process(silence, silence.length, 1, 1, AudioProcessor.CLEAN, true, 50);
-        for (short s : silence) if (s != 0) throw new AssertionError("Silence not silent");
+        for (short sample : silence) if (sample != 0) throw new AssertionError("Silence not silent");
         boolean caught = false;
-        try { processor.process(samples, 481, 1, 1, AudioProcessor.CLEAN, false, 50); }
+        try { processor.process(silence, 481, 1, 1, AudioProcessor.CLEAN, false, 50); }
         catch (IllegalArgumentException expected) { caught = true; }
-        if (!caught) throw new AssertionError("Invalid buffer was accepted");
-        System.out.println("AudioProcessor tests passed: 6 effects, silence, buffer validation");
+        if (!caught) throw new AssertionError("Expected invalid buffer rejection");
+        caught = false;
+        try { processor.process(silence, silence.length, Float.NaN, 1, AudioProcessor.CLEAN, false, 50); }
+        catch (IllegalArgumentException expected) { caught = true; }
+        if (!caught) throw new AssertionError("Expected NaN gain rejection");
+        System.out.println("All " + AudioProcessor.EFFECTS.length + " effects pass: audio, silence, invalid buffer, NaN gain");
     }
 }

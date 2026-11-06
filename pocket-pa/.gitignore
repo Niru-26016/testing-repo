@@ -7,3 +7,9 @@ local.properties
 /captures/
 *.apk
 *.aab
+
+# Never commit Play upload keys or local signing material
+*.jks
+*.keystore
+*.p12
+local.properties

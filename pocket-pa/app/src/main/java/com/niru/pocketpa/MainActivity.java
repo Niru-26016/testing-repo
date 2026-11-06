@@ -2,6 +2,7 @@ package com.niru.pocketpa;
 
 import android.Manifest;
 import android.app.Activity;
+import android.app.AlertDialog;
 import android.content.Intent;
 import android.content.SharedPreferences;
 import android.content.pm.PackageManager;
@@ -18,47 +19,58 @@ import android.os.Looper;
 import android.provider.Settings;
 import android.view.Gravity;
 import android.view.View;
+import android.view.WindowInsets;
 import android.widget.Button;
-import android.widget.HorizontalScrollView;
 import android.widget.LinearLayout;
 import android.widget.ScrollView;
 import android.widget.SeekBar;
 import android.widget.Switch;
 import android.widget.TextView;
+import java.util.ArrayList;
+import java.util.List;
 
-/** Native app UI; no network permission or cloud service required. */
+/** Offline and accessible Android UI. Deliberately no ads, analytics or trackers. */
 public final class MainActivity extends Activity {
-    private static final int BG = Color.rgb(11, 17, 25);
-    private static final int SURFACE = Color.rgb(22, 32, 44);
-    private static final int SURFACE_2 = Color.rgb(31, 43, 57);
-    private static final int ACCENT = Color.rgb(101, 228, 207);
-    private static final int TEXT = Color.rgb(242, 247, 250);
-    private static final int MUTED = Color.rgb(159, 178, 190);
-    private static final String[] EFFECTS = {"Clean", "Echo", "Megaphone", "Telephone", "Robot", "Distortion"};
+    private static final int BG = Color.rgb(10, 14, 22);
+    private static final int PANEL = Color.rgb(23, 30, 43);
+    private static final int PANEL_LIGHT = Color.rgb(35, 45, 61);
+    private static final int LIME = Color.rgb(199, 248, 114);
+    private static final int PURPLE = Color.rgb(177, 159, 255);
+    private static final int WHITE = Color.rgb(247, 250, 253);
+    private static final int MUTED = Color.rgb(155, 171, 191);
+    private static final int RED = Color.rgb(255, 124, 132);
+    private static final String[] ICONS = {"◉", "↓", "↑", "▦", "✦", "〰", "↝", "◎", "◈", "☎", "⚡", "◆"};
+    private static final String[] DESCRIPTIONS = {
+            "Natural voice", "Lower pitch", "Higher pitch", "Metallic", "Sci-fi", "Breathy",
+            "Repeating tail", "Big reverb", "Vintage sound", "Narrow-band", "Loud & gritty", "Overdrive"
+    };
     private static final int REQUEST_AUDIO = 100;
     private static final int REQUEST_BLUETOOTH = 101;
-
+    private static final int REQUEST_NOTIFICATIONS = 102;
     private final Handler handler = new Handler(Looper.getMainLooper());
+    private final List<LinearLayout> presetCards = new ArrayList<>();
+    private final List<TextView> presetTitles = new ArrayList<>();
+    private final List<View> meterBars = new ArrayList<>();
+
     private final Runnable ticker = new Runnable() {
         @Override public void run() {
             refreshStatus();
-            handler.postDelayed(this, 1000);
+            handler.postDelayed(this, 120);
         }
     };
 
     private SharedPreferences prefs;
-    private TextView speakerLabel;
+    private TextView speakerName;
     private TextView statusLabel;
+    private TextView levelLabel;
+    private TextView activePreset;
     private Button micButton;
-    private TextView micValue;
-    private TextView outValue;
-    private TextView gateHint;
-    private final java.util.ArrayList<TextView> effectChips = new java.util.ArrayList<>();
     private int micPercent;
     private int outputPercent;
     private int sensitivity;
     private String selectedEffect;
     private boolean noiseGate;
+    private boolean lastRunning = false;
 
     @Override public void onCreate(Bundle state) {
         super.onCreate(state);
@@ -68,157 +80,239 @@ public final class MainActivity extends Activity {
         sensitivity = prefs.getInt("sensitivity", 55);
         selectedEffect = prefs.getString("effect", AudioProcessor.CLEAN);
         noiseGate = prefs.getBoolean("gate", false);
+        micPercent = Math.max(0, Math.min(200, micPercent));
+        outputPercent = Math.max(0, Math.min(150, outputPercent));
+        sensitivity = Math.max(0, Math.min(100, sensitivity));
         buildInterface();
         refreshStatus();
     }
 
     private void buildInterface() {
+        getWindow().setStatusBarColor(BG);
+        getWindow().setNavigationBarColor(BG);
+        getWindow().getDecorView().setSystemUiVisibility(0);
         ScrollView scroll = new ScrollView(this);
         scroll.setFillViewport(true);
         scroll.setBackgroundColor(BG);
-        LinearLayout page = new LinearLayout(this);
-        page.setOrientation(LinearLayout.VERTICAL);
-        page.setPadding(dp(22), dp(26), dp(22), dp(34));
+        scroll.setClipToPadding(false);
+        LinearLayout page = vertical();
+        page.setPadding(dp(20), dp(27), dp(20), dp(34));
         scroll.addView(page);
-        setContentView(scroll);
-
-        LinearLayout brand = new LinearLayout(this);
-        brand.setGravity(Gravity.CENTER_VERTICAL);
-        TextView brandIcon = text("◉", 25, ACCENT, Typeface.BOLD);
-        brandIcon.setGravity(Gravity.CENTER);
-        brandIcon.setBackground(shape(SURFACE, 15, null));
-        brand.addView(brandIcon, new LinearLayout.LayoutParams(dp(47), dp(47)));
-        TextView brandName = text("POCKET PA", 18, TEXT, Typeface.BOLD);
-        LinearLayout.LayoutParams brandParams = new LinearLayout.LayoutParams(-2, -2);
-        brandParams.leftMargin = dp(12);
-        brand.addView(brandName, brandParams);
-        page.addView(brand);
-        space(page, 25);
-
-        TextView eyebrow = text("GO LIVE IN SECONDS", 12, ACCENT, Typeface.BOLD);
-        eyebrow.setLetterSpacing(0.13f);
-        page.addView(eyebrow);
-        space(page, 10);
-        TextView headline = text("Your phone.\nA wireless mic.", 32, TEXT, Typeface.BOLD);
-        headline.setLineSpacing(dp(2), 1f);
-        page.addView(headline);
-        space(page, 9);
-        page.addView(text("Speak into your phone and hear your voice through your connected Bluetooth speaker.", 15, MUTED, Typeface.NORMAL));
-        space(page, 24);
-
-        LinearLayout deviceCard = card(page);
-        LinearLayout deviceRow = new LinearLayout(this);
-        deviceRow.setGravity(Gravity.CENTER_VERTICAL);
-        LinearLayout deviceText = new LinearLayout(this);
-        deviceText.setOrientation(LinearLayout.VERTICAL);
-        deviceText.addView(text("AUDIO OUTPUT", 11, MUTED, Typeface.BOLD));
-        space(deviceText, 6);
-        speakerLabel = text("Checking media output…", 16, TEXT, Typeface.BOLD);
-        deviceText.addView(speakerLabel);
-        deviceRow.addView(deviceText, new LinearLayout.LayoutParams(0, -2, 1));
-        TextView speakerIcon = text("◖))", 20, ACCENT, Typeface.BOLD);
-        deviceRow.addView(speakerIcon);
-        deviceCard.addView(deviceRow);
-        space(deviceCard, 13);
-        Button bluetoothButton = button("OPEN BLUETOOTH SETTINGS", false);
-        bluetoothButton.setOnClickListener(v -> {
-            try { startActivity(new Intent(Settings.ACTION_BLUETOOTH_SETTINGS)); }
-            catch (Exception e) { statusLabel.setText("Open Android Settings → Bluetooth manually."); }
-        });
-        deviceCard.addView(bluetoothButton, new LinearLayout.LayoutParams(-1, dp(43)));
-        if (Build.VERSION.SDK_INT >= 31 &&
-                checkSelfPermission(Manifest.permission.BLUETOOTH_CONNECT) != PackageManager.PERMISSION_GRANTED) {
-            space(deviceCard, 6);
-            TextView askBt = text("Allow speaker name detection", 12, ACCENT, Typeface.BOLD);
-            askBt.setPadding(0, dp(8), 0, dp(8));
-            askBt.setOnClickListener(v -> requestPermissions(new String[]{Manifest.permission.BLUETOOTH_CONNECT}, REQUEST_BLUETOOTH));
-            deviceCard.addView(askBt);
-        }
-        space(page, 17);
-
-        LinearLayout liveCard = card(page);
-        TextView micHeading = text("MICROPHONE", 11, MUTED, Typeface.BOLD);
-        micHeading.setGravity(Gravity.CENTER);
-        liveCard.addView(micHeading);
-        space(liveCard, 13);
-        micButton = button("START MICROPHONE", true);
-        micButton.setTextSize(17);
-        micButton.setOnClickListener(v -> toggleMicrophone());
-        liveCard.addView(micButton, new LinearLayout.LayoutParams(-1, dp(78)));
-        space(liveCard, 13);
-        statusLabel = text("Connect a speaker, then tap Start.", 13, MUTED, Typeface.NORMAL);
-        statusLabel.setGravity(Gravity.CENTER);
-        liveCard.addView(statusLabel);
-        space(page, 26);
-
-        sectionTitle(page, "LEVELS", "Adjust the balance");
-        space(page, 13);
-        LinearLayout levelsCard = card(page);
-        micValue = text("100%", 14, ACCENT, Typeface.BOLD);
-        outValue = text("100%", 14, ACCENT, Typeface.BOLD);
-        addSlider(levelsCard, "Mic sensitivity / input gain", micValue, micPercent, 200,
-                value -> { micPercent = value; micValue.setText(value + "%"); commit(); });
-        space(levelsCard, 19);
-        addSlider(levelsCard, "Speaker output gain", outValue, outputPercent, 150,
-                value -> { outputPercent = value; outValue.setText(value + "%"); commit(); });
-        space(page, 26);
-
-        sectionTitle(page, "VOICE EFFECTS", "Add some character");
-        space(page, 14);
-        HorizontalScrollView effectsScroll = new HorizontalScrollView(this);
-        effectsScroll.setHorizontalScrollBarEnabled(false);
-        LinearLayout chips = new LinearLayout(this);
-        chips.setOrientation(LinearLayout.HORIZONTAL);
-        for (String effectName : EFFECTS) {
-            TextView chip = text(effectName, 14, TEXT, Typeface.BOLD);
-            chip.setGravity(Gravity.CENTER);
-            chip.setPadding(dp(17), dp(13), dp(17), dp(13));
-            LinearLayout.LayoutParams cp = new LinearLayout.LayoutParams(-2, -2);
-            cp.rightMargin = dp(8);
-            chips.addView(chip, cp);
-            effectChips.add(chip);
-            chip.setOnClickListener(v -> {
-                selectedEffect = effectName;
-                updateChipColors();
-                commit();
+        if (Build.VERSION.SDK_INT >= 30) {
+            getWindow().setDecorFitsSystemWindows(false);
+            scroll.setOnApplyWindowInsetsListener((view, insets) -> {
+                android.graphics.Insets bars = insets.getInsets(WindowInsets.Type.systemBars());
+                page.setPadding(dp(20), dp(26) + bars.top, dp(20), dp(34) + bars.bottom);
+                return insets;
             });
         }
-        effectsScroll.addView(chips);
-        page.addView(effectsScroll);
-        updateChipColors();
-        space(page, 25);
+        setContentView(scroll);
 
-        sectionTitle(page, "FEEDBACK CONTROL", "Reduce noise between words");
-        space(page, 14);
-        LinearLayout feedbackCard = card(page);
-        LinearLayout gateRow = new LinearLayout(this);
-        gateRow.setGravity(Gravity.CENTER_VERTICAL);
-        TextView gateLabel = text("Noise gate", 16, TEXT, Typeface.BOLD);
-        gateRow.addView(gateLabel, new LinearLayout.LayoutParams(0, -2, 1));
+        LinearLayout header = horizontal(Gravity.CENTER_VERTICAL);
+        TextView symbol = label("◉", 29, BG, Typeface.BOLD);
+        symbol.setGravity(Gravity.CENTER);
+        symbol.setBackground(round(LIME, 17, null));
+        header.addView(symbol, new LinearLayout.LayoutParams(dp(51), dp(51)));
+        LinearLayout identity = vertical();
+        identity.addView(label("Pocket PA", 23, WHITE, Typeface.BOLD));
+        TextView caption = label("LIVE AUDIO • VOICE STUDIO", 10, MUTED, Typeface.BOLD);
+        caption.setLetterSpacing(0.14f);
+        identity.addView(caption);
+        LinearLayout.LayoutParams identityLp = new LinearLayout.LayoutParams(0, -2, 1);
+        identityLp.leftMargin = dp(13);
+        header.addView(identity, identityLp);
+        TextView version = label("V2.0", 10, LIME, Typeface.BOLD);
+        version.setGravity(Gravity.CENTER);
+        version.setBackground(round(PANEL_LIGHT, 11, null));
+        header.addView(version, new LinearLayout.LayoutParams(dp(47), dp(30)));
+        page.addView(header);
+        gap(page, 26);
+
+        LinearLayout hero = vertical();
+        hero.setPadding(dp(21), dp(22), dp(21), dp(22));
+        GradientDrawable gradient = new GradientDrawable(GradientDrawable.Orientation.TL_BR,
+                new int[]{Color.rgb(49, 48, 84), Color.rgb(26, 43, 69), Color.rgb(24, 32, 45)});
+        gradient.setCornerRadius(dp(25));
+        gradient.setStroke(dp(1), Color.rgb(68, 70, 102));
+        hero.setBackground(gradient);
+        TextView eyebrow = label("YOUR STAGE, ANYWHERE", 11, LIME, Typeface.BOLD);
+        eyebrow.setLetterSpacing(0.15f);
+        hero.addView(eyebrow);
+        gap(hero, 12);
+        TextView title = label("Turn your phone\ninto a microphone.", 29, WHITE, Typeface.BOLD);
+        title.setLineSpacing(dp(3), 1f);
+        hero.addView(title);
+        gap(hero, 9);
+        TextView subtitle = label("Speak or sing through your connected Bluetooth speaker. No internet needed.", 14, MUTED, Typeface.NORMAL);
+        subtitle.setLineSpacing(dp(3), 1f);
+        hero.addView(subtitle);
+        gap(hero, 19);
+
+        LinearLayout meter = horizontal(Gravity.BOTTOM);
+        meter.setGravity(Gravity.CENTER);
+        for (int i = 0; i < 21; i++) {
+            View bar = new View(this);
+            bar.setBackground(round(PANEL_LIGHT, 4, null));
+            LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(0, dp(7), 1f);
+            lp.leftMargin = dp(2);
+            lp.rightMargin = dp(2);
+            meter.addView(bar, lp);
+            meterBars.add(bar);
+        }
+        hero.addView(meter, new LinearLayout.LayoutParams(-1, dp(48)));
+        gap(hero, 8);
+        LinearLayout liveStrip = horizontal(Gravity.CENTER_VERTICAL);
+        statusLabel = label("READY TO GO LIVE", 11, WHITE, Typeface.BOLD);
+        statusLabel.setLetterSpacing(0.07f);
+        liveStrip.addView(statusLabel, new LinearLayout.LayoutParams(0, -2, 1));
+        levelLabel = label("MIC OFF", 11, MUTED, Typeface.BOLD);
+        liveStrip.addView(levelLabel);
+        hero.addView(liveStrip);
+        gap(hero, 17);
+        micButton = button("●  START MICROPHONE", true);
+        micButton.setTextSize(17);
+        micButton.setContentDescription("Start microphone broadcast");
+        micButton.setOnClickListener(v -> toggleMicrophone());
+        hero.addView(micButton, new LinearLayout.LayoutParams(-1, dp(66)));
+        page.addView(hero);
+        gap(page, 18);
+
+        LinearLayout outputCard = card(page);
+        LinearLayout outputRow = horizontal(Gravity.CENTER_VERTICAL);
+        TextView deviceIcon = label("◖))", 23, PURPLE, Typeface.BOLD);
+        deviceIcon.setGravity(Gravity.CENTER);
+        deviceIcon.setBackground(round(PANEL_LIGHT, 13, null));
+        outputRow.addView(deviceIcon, new LinearLayout.LayoutParams(dp(54), dp(54)));
+        LinearLayout info = vertical();
+        info.addView(label("CONNECTED AUDIO OUTPUT", 10, MUTED, Typeface.BOLD));
+        gap(info, 5);
+        speakerName = label("Checking output…", 15, WHITE, Typeface.BOLD);
+        info.addView(speakerName);
+        LinearLayout.LayoutParams infoLp = new LinearLayout.LayoutParams(0, -2, 1);
+        infoLp.leftMargin = dp(13);
+        outputRow.addView(info, infoLp);
+        outputCard.addView(outputRow);
+        gap(outputCard, 14);
+        Button connect = button("Bluetooth settings  ↗", false);
+        connect.setContentDescription("Open Bluetooth settings to connect a speaker");
+        connect.setOnClickListener(v -> {
+            try { startActivity(new Intent(Settings.ACTION_BLUETOOTH_SETTINGS)); }
+            catch (Exception e) { speakerName.setText("Open Bluetooth in Android Settings"); }
+        });
+        outputCard.addView(connect, new LinearLayout.LayoutParams(-1, dp(46)));
+        if (Build.VERSION.SDK_INT >= 31 && checkSelfPermission(Manifest.permission.BLUETOOTH_CONNECT) != PackageManager.PERMISSION_GRANTED) {
+            gap(outputCard, 7);
+            TextView permission = label("Allow Bluetooth permission to show the speaker name", 12, PURPLE, Typeface.BOLD);
+            permission.setPadding(0, dp(6), 0, dp(6));
+            permission.setOnClickListener(v -> requestPermissions(new String[]{Manifest.permission.BLUETOOTH_CONNECT}, REQUEST_BLUETOOTH));
+            outputCard.addView(permission);
+        }
+        gap(page, 27);
+
+        section(page, "VOICE STUDIO", "Make every word sound different", "Tap an effect to apply it live");
+        gap(page, 15);
+        String[] effects = AudioProcessor.EFFECTS;
+        for (int i = 0; i < effects.length; i += 2) {
+            LinearLayout pair = horizontal(Gravity.TOP);
+            for (int j = i; j < Math.min(i + 2, effects.length); j++) {
+                final String chosen = effects[j];
+                LinearLayout option = vertical();
+                option.setPadding(dp(14), dp(15), dp(12), dp(14));
+                TextView glyph = label(ICONS[j], 23, PURPLE, Typeface.BOLD);
+                option.addView(glyph);
+                gap(option, 9);
+                TextView effectTitle = label(chosen, 15, WHITE, Typeface.BOLD);
+                effectTitle.setSingleLine(true);
+                option.addView(effectTitle);
+                gap(option, 3);
+                option.addView(label(DESCRIPTIONS[j], 11, MUTED, Typeface.NORMAL));
+                option.setContentDescription(chosen + " effect. " + DESCRIPTIONS[j]);
+                option.setFocusable(true);
+                option.setClickable(true);
+                option.setOnClickListener(v -> {
+                    selectedEffect = chosen;
+                    updateSelectedPreset();
+                    saveSettings();
+                });
+                presetCards.add(option);
+                presetTitles.add(effectTitle);
+                LinearLayout.LayoutParams optionLp = new LinearLayout.LayoutParams(0, dp(114), 1f);
+                if (j % 2 == 1) optionLp.leftMargin = dp(11);
+                pair.addView(option, optionLp);
+            }
+            page.addView(pair);
+            gap(page, 11);
+        }
+        activePreset = label("Current preset: " + selectedEffect, 12, LIME, Typeface.BOLD);
+        activePreset.setGravity(Gravity.CENTER);
+        page.addView(activePreset);
+        updateSelectedPreset();
+        gap(page, 24);
+
+        section(page, "MIXER", "Fine-tune your sound", "Make adjustments while live");
+        gap(page, 15);
+        LinearLayout mixer = card(page);
+        TextView micPercentLabel = label(micPercent + "%", 14, LIME, Typeface.BOLD);
+        addSlider(mixer, "MIC INPUT", "Voice capture level", micPercentLabel, micPercent, 200, value -> {
+            micPercent = value;
+            micPercentLabel.setText(value + "%");
+            saveSettings();
+        });
+        gap(mixer, 23);
+        TextView outputPercentLabel = label(outputPercent + "%", 14, LIME, Typeface.BOLD);
+        addSlider(mixer, "SPEAKER OUTPUT", "Output boost and volume", outputPercentLabel, outputPercent, 150, value -> {
+            outputPercent = value;
+            outputPercentLabel.setText(value + "%");
+            saveSettings();
+        });
+        gap(page, 24);
+
+        section(page, "FEEDBACK CONTROL", "Less noise, clearer speech", "For rooms with speakers nearby");
+        gap(page, 15);
+        LinearLayout feedback = card(page);
+        LinearLayout switchRow = horizontal(Gravity.CENTER_VERTICAL);
+        LinearLayout switchCopy = vertical();
+        switchCopy.addView(label("Noise gate", 16, WHITE, Typeface.BOLD));
+        gap(switchCopy, 3);
+        switchCopy.addView(label("Suppress quiet background noise", 12, MUTED, Typeface.NORMAL));
+        switchRow.addView(switchCopy, new LinearLayout.LayoutParams(0, -2, 1));
         Switch gateSwitch = new Switch(this);
         gateSwitch.setChecked(noiseGate);
-        gateSwitch.setThumbTintList(new ColorStateList(new int[][] {new int[] {android.R.attr.state_checked}, new int[] {}}, new int[] {ACCENT, MUTED}));
-        gateRow.addView(gateSwitch);
-        feedbackCard.addView(gateRow);
-        gateHint = text("Off · Most natural speech. Turn on if background noise causes feedback.", 13, MUTED, Typeface.NORMAL);
-        feedbackCard.addView(gateHint);
-        gateSwitch.setOnCheckedChangeListener((button, checked) -> {
+        gateSwitch.setThumbTintList(new ColorStateList(new int[][]{new int[]{android.R.attr.state_checked}, new int[]{}}, new int[]{LIME, MUTED}));
+        switchRow.addView(gateSwitch);
+        feedback.addView(switchRow);
+        gateSwitch.setOnCheckedChangeListener((compound, checked) -> {
             noiseGate = checked;
-            gateHint.setText(checked ? "On · Quiet sounds may be clipped. Adjust the threshold below." :
-                    "Off · Most natural speech. Turn on if background noise causes feedback.");
-            commit();
+            saveSettings();
         });
-        space(feedbackCard, 16);
-        TextView sensVal = text(sensitivity + "%", 14, ACCENT, Typeface.BOLD);
-        addSlider(feedbackCard, "Gate sensitivity", sensVal, sensitivity, 100,
-                value -> { sensitivity = value; sensVal.setText(value + "%"); commit(); });
-        space(page, 22);
+        gap(feedback, 20);
+        TextView gateValue = label(sensitivity + "%", 14, LIME, Typeface.BOLD);
+        addSlider(feedback, "GATE SENSITIVITY", "Higher catches softer voices", gateValue, sensitivity, 100, value -> {
+            sensitivity = value;
+            gateValue.setText(value + "%");
+            saveSettings();
+        });
+        gap(page, 22);
 
-        TextView note = text("TIP  Keep the phone away from the speaker to prevent squealing. Bluetooth introduces delay; wired speakers are usually faster.",
-                13, MUTED, Typeface.NORMAL);
-        note.setLineSpacing(dp(4), 1f);
-        note.setPadding(dp(3), dp(3), dp(3), dp(3));
-        page.addView(note);
+        LinearLayout tipCard = vertical();
+        tipCard.setPadding(dp(17), dp(17), dp(17), dp(17));
+        tipCard.setBackground(round(Color.rgb(33, 34, 45), 18, Color.rgb(74, 68, 89)));
+        tipCard.addView(label("✧  SOUND CHECK TIP", 12, PURPLE, Typeface.BOLD));
+        gap(tipCard, 8);
+        TextView hint = label("Keep your phone away from the speaker to avoid feedback. Bluetooth has built-in delay; wired output usually responds faster.", 13, MUTED, Typeface.NORMAL);
+        hint.setLineSpacing(dp(3), 1f);
+        tipCard.addView(hint);
+        page.addView(tipCard);
+        gap(page, 22);
+
+        TextView privacy = label("Privacy & microphone usage  •  100% offline", 12, MUTED, Typeface.NORMAL);
+        privacy.setGravity(Gravity.CENTER);
+        privacy.setPadding(dp(8), dp(10), dp(8), dp(10));
+        privacy.setOnClickListener(v -> new AlertDialog.Builder(this)
+                .setTitle("Your privacy matters")
+                .setMessage("Pocket PA accesses your microphone only after you press Start. Audio is processed on your phone and streamed to your chosen output. It is not saved, collected, shared, or transmitted to a server. A foreground notification lets you stop playback at any time. Bluetooth permission is only used to show available device names. You can stop the mic or revoke permissions in Android Settings.")
+                .setPositiveButton("Got it", null).show());
+        page.addView(privacy);
     }
 
     private void toggleMicrophone() {
@@ -230,27 +324,25 @@ public final class MainActivity extends Activity {
         } else {
             try {
                 startForegroundService(settingsIntent(MicService.ACTION_START));
+                if (Build.VERSION.SDK_INT >= 33 &&
+                        checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED &&
+                        !prefs.getBoolean("notification_asked", false)) {
+                    prefs.edit().putBoolean("notification_asked", true).apply();
+                    requestPermissions(new String[]{Manifest.permission.POST_NOTIFICATIONS}, REQUEST_NOTIFICATIONS);
+                }
             } catch (Exception e) {
-                statusLabel.setText("Could not start: " + e.getMessage());
+                statusLabel.setText("Couldn't start: " + e.getClass().getSimpleName());
             }
         }
-        handler.postDelayed(this::refreshStatus, 200);
+        handler.postDelayed(this::refreshStatus, 240);
     }
 
     @Override public void onRequestPermissionsResult(int code, String[] permissions, int[] grants) {
         super.onRequestPermissionsResult(code, permissions, grants);
         if (code == REQUEST_AUDIO) {
             if (grants.length > 0 && grants[0] == PackageManager.PERMISSION_GRANTED) toggleMicrophone();
-            else statusLabel.setText("Microphone permission is needed to speak.");
-        }
-        if (code == REQUEST_BLUETOOTH) refreshStatus();
-    }
-
-    private void commit() {
-        prefs.edit().putInt("mic", micPercent).putInt("out", outputPercent)
-                .putString("effect", selectedEffect).putBoolean("gate", noiseGate)
-                .putInt("sensitivity", sensitivity).apply();
-        if (MicService.running) startService(settingsIntent(MicService.ACTION_UPDATE));
+            else statusLabel.setText("Microphone permission required");
+        } else if (code == REQUEST_BLUETOOTH) refreshStatus();
     }
 
     private Intent settingsIntent(String action) {
@@ -262,26 +354,49 @@ public final class MainActivity extends Activity {
                 .putExtra(MicService.EXTRA_SENSITIVITY, sensitivity);
     }
 
+    private void saveSettings() {
+        prefs.edit().putInt("mic", micPercent).putInt("out", outputPercent)
+                .putString("effect", selectedEffect).putBoolean("gate", noiseGate)
+                .putInt("sensitivity", sensitivity).apply();
+        if (MicService.running) startService(settingsIntent(MicService.ACTION_UPDATE));
+    }
+
     private void refreshStatus() {
-        if (micButton == null || speakerLabel == null || statusLabel == null) return;
-        boolean on = MicService.running;
-        micButton.setText(on ? "■  STOP MICROPHONE" : "●  START MICROPHONE");
-        micButton.setBackground(shape(on ? Color.rgb(242, 118, 118) : ACCENT, 18, null));
-        micButton.setTextColor(BG);
-        if (MicService.lastError != null && !on) statusLabel.setText(MicService.lastError);
-        else statusLabel.setText(on ? "LIVE  ·  Your microphone is active" : "Ready to speak · Start when connected");
+        if (micButton == null || speakerName == null || statusLabel == null) return;
+        boolean running = MicService.running;
+        if (running != lastRunning) {
+            micButton.setText(running ? "■  STOP MICROPHONE" : "●  START MICROPHONE");
+            micButton.setContentDescription(running ? "Stop microphone broadcast" : "Start microphone broadcast");
+            micButton.setBackground(round(running ? RED : LIME, 17, null));
+            lastRunning = running;
+        }
+        if (MicService.lastError != null && !running) statusLabel.setText(MicService.lastError);
+        else statusLabel.setText(running ? "●  YOU'RE LIVE" : "READY TO GO LIVE");
+        statusLabel.setTextColor(running ? LIME : WHITE);
+        float level = running ? MicService.audioLevel : 0f;
+        int peak = Math.round(level * meterBars.size());
+        for (int i = 0; i < meterBars.size(); i++) {
+            View bar = meterBars.get(i);
+            LinearLayout.LayoutParams lp = (LinearLayout.LayoutParams) bar.getLayoutParams();
+            boolean lit = running && (i < peak);
+            int height = lit ? 12 + (i * 17 / meterBars.size()) : 7;
+            lp.height = dp(height);
+            bar.setLayoutParams(lp);
+            bar.setBackground(round(lit ? (i > 15 ? PURPLE : LIME) : PANEL_LIGHT, 4, null));
+        }
+        levelLabel.setText(running ? Math.round(level * 100) + "% INPUT" : "MIC OFF");
         AudioDeviceInfo bt = findBluetoothDevice();
         if (bt != null) {
-            String name = "Bluetooth speaker connected";
+            String name = "Bluetooth speaker detected";
             try {
                 CharSequence product = bt.getProductName();
                 if (product != null && product.length() > 0) name = product.toString();
             } catch (SecurityException ignored) { }
-            speakerLabel.setText("●  " + name);
-            speakerLabel.setTextColor(ACCENT);
+            speakerName.setText("●  " + name);
+            speakerName.setTextColor(LIME);
         } else {
-            speakerLabel.setText("Phone / selected media output");
-            speakerLabel.setTextColor(TEXT);
+            speakerName.setText("Phone / selected media output");
+            speakerName.setTextColor(WHITE);
         }
     }
 
@@ -304,96 +419,108 @@ public final class MainActivity extends Activity {
         handler.removeCallbacks(ticker);
         handler.post(ticker);
     }
-
     @Override protected void onPause() {
         handler.removeCallbacks(ticker);
         super.onPause();
     }
 
-    private interface SliderHandler { void accept(int value); }
+    private void updateSelectedPreset() {
+        for (int i = 0; i < presetCards.size(); i++) {
+            boolean chosen = AudioProcessor.EFFECTS[i].equals(selectedEffect);
+            presetCards.get(i).setBackground(round(chosen ? Color.rgb(53, 73, 63) : PANEL,
+                    17, chosen ? LIME : Color.rgb(40, 50, 66)));
+            presetTitles.get(i).setTextColor(chosen ? LIME : WHITE);
+            presetCards.get(i).setSelected(chosen);
+        }
+        if (activePreset != null) activePreset.setText("✦  Current preset: " + selectedEffect);
+    }
 
-    private void addSlider(LinearLayout parent, String title, TextView valueView,
+    private interface SliderHandler { void update(int value); }
+    private void addSlider(LinearLayout parent, String title, String subtitle, TextView value,
                            int initial, int max, SliderHandler changed) {
-        LinearLayout label = new LinearLayout(this);
-        label.setGravity(Gravity.CENTER_VERTICAL);
-        TextView labelView = text(title, 14, TEXT, Typeface.NORMAL);
-        label.addView(labelView, new LinearLayout.LayoutParams(0, -2, 1));
-        valueView.setText(initial + "%");
-        label.addView(valueView);
-        parent.addView(label);
-        space(parent, 7);
+        LinearLayout row = horizontal(Gravity.CENTER_VERTICAL);
+        LinearLayout copy = vertical();
+        copy.addView(label(title, 12, WHITE, Typeface.BOLD));
+        gap(copy, 3);
+        copy.addView(label(subtitle, 12, MUTED, Typeface.NORMAL));
+        row.addView(copy, new LinearLayout.LayoutParams(0, -2, 1));
+        row.addView(value);
+        parent.addView(row);
+        gap(parent, 8);
         SeekBar seek = new SeekBar(this);
         seek.setMax(max);
         seek.setProgress(initial);
-        seek.setProgressTintList(ColorStateList.valueOf(ACCENT));
-        seek.setThumbTintList(ColorStateList.valueOf(ACCENT));
-        seek.setProgressBackgroundTintList(ColorStateList.valueOf(SURFACE_2));
+        seek.setContentDescription(title);
+        seek.setProgressTintList(ColorStateList.valueOf(LIME));
+        seek.setThumbTintList(ColorStateList.valueOf(LIME));
+        seek.setProgressBackgroundTintList(ColorStateList.valueOf(PANEL_LIGHT));
         seek.setOnSeekBarChangeListener(new SeekBar.OnSeekBarChangeListener() {
             @Override public void onProgressChanged(SeekBar bar, int progress, boolean fromUser) {
-                if (fromUser) changed.accept(progress);
+                if (fromUser) changed.update(progress);
             }
             @Override public void onStartTrackingTouch(SeekBar bar) { }
             @Override public void onStopTrackingTouch(SeekBar bar) { }
         });
-        parent.addView(seek, new LinearLayout.LayoutParams(-1, dp(30)));
+        parent.addView(seek, new LinearLayout.LayoutParams(-1, dp(36)));
     }
 
-    private void updateChipColors() {
-        for (int i = 0; i < effectChips.size(); i++) {
-            TextView chip = effectChips.get(i);
-            boolean active = EFFECTS[i].equals(selectedEffect);
-            chip.setTextColor(active ? BG : TEXT);
-            chip.setBackground(shape(active ? ACCENT : SURFACE_2, 18, null));
-        }
+    private void section(LinearLayout page, String heading, String title, String sub) {
+        TextView overline = label(heading, 11, LIME, Typeface.BOLD);
+        overline.setLetterSpacing(0.17f);
+        page.addView(overline);
+        gap(page, 5);
+        page.addView(label(title, 21, WHITE, Typeface.BOLD));
+        gap(page, 4);
+        page.addView(label(sub, 13, MUTED, Typeface.NORMAL));
     }
-
-    private void sectionTitle(LinearLayout page, String heading, String subtitle) {
-        page.addView(text(heading, 12, ACCENT, Typeface.BOLD));
-        space(page, 5);
-        page.addView(text(subtitle, 20, TEXT, Typeface.BOLD));
-    }
-
     private LinearLayout card(LinearLayout page) {
-        LinearLayout result = new LinearLayout(this);
-        result.setOrientation(LinearLayout.VERTICAL);
-        result.setPadding(dp(18), dp(19), dp(18), dp(19));
-        result.setBackground(shape(SURFACE, 21, null));
-        page.addView(result, new LinearLayout.LayoutParams(-1, -2));
-        return result;
+        LinearLayout card = vertical();
+        card.setPadding(dp(18), dp(18), dp(18), dp(19));
+        card.setBackground(round(PANEL, 20, Color.rgb(43, 52, 68)));
+        page.addView(card, new LinearLayout.LayoutParams(-1, -2));
+        return card;
     }
-
-    private Button button(String label, boolean filled) {
-        Button result = new Button(this);
-        result.setAllCaps(false);
-        result.setText(label);
-        result.setTextSize(13);
-        result.setTypeface(Typeface.DEFAULT, Typeface.BOLD);
-        result.setTextColor(filled ? BG : ACCENT);
-        result.setBackground(shape(filled ? ACCENT : SURFACE_2, filled ? 18 : 12, null));
-        result.setElevation(0);
-        return result;
+    private Button button(String title, boolean primary) {
+        Button button = new Button(this);
+        button.setAllCaps(false);
+        button.setText(title);
+        button.setTextSize(14);
+        button.setTypeface(Typeface.DEFAULT, Typeface.BOLD);
+        button.setTextColor(primary ? BG : LIME);
+        button.setBackground(round(primary ? LIME : PANEL_LIGHT, 16, null));
+        button.setElevation(0);
+        return button;
     }
-
-    private TextView text(String value, int sp, int color, int style) {
-        TextView result = new TextView(this);
-        result.setText(value);
-        result.setTextSize(sp);
-        result.setTextColor(color);
-        result.setTypeface(Typeface.create("sans-serif", style));
-        return result;
+    private LinearLayout vertical() {
+        LinearLayout layout = new LinearLayout(this);
+        layout.setOrientation(LinearLayout.VERTICAL);
+        return layout;
     }
-
-    private GradientDrawable shape(int fill, int radius, Integer border) {
-        GradientDrawable result = new GradientDrawable();
-        result.setColor(fill);
-        result.setCornerRadius(dp(radius));
-        if (border != null) result.setStroke(dp(1), border);
-        return result;
+    private LinearLayout horizontal(int gravity) {
+        LinearLayout layout = new LinearLayout(this);
+        layout.setOrientation(LinearLayout.HORIZONTAL);
+        layout.setGravity(gravity);
+        return layout;
     }
-
-    private void space(LinearLayout parent, int dpHeight) {
-        parent.addView(new View(this), new LinearLayout.LayoutParams(1, dp(dpHeight)));
+    private TextView label(String value, int sp, int color, int style) {
+        TextView view = new TextView(this);
+        view.setText(value);
+        view.setTextSize(sp);
+        view.setTextColor(color);
+        view.setTypeface(Typeface.create("sans-serif", style));
+        return view;
     }
-
-    private int dp(float value) { return (int) (value * getResources().getDisplayMetrics().density + 0.5f); }
+    private GradientDrawable round(int color, float radius, Integer stroke) {
+        GradientDrawable d = new GradientDrawable();
+        d.setColor(color);
+        d.setCornerRadius(dp(radius));
+        if (stroke != null) d.setStroke(dp(1), stroke);
+        return d;
+    }
+    private void gap(LinearLayout column, int height) {
+        column.addView(new View(this), new LinearLayout.LayoutParams(dp(1), dp(height)));
+    }
+    private int dp(float value) {
+        return (int) (value * getResources().getDisplayMetrics().density + 0.5f);
+    }
 }

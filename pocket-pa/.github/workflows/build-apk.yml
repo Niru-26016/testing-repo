@@ -1,11 +1,11 @@
-name: Build Pocket PA APK
+name: Pocket PA 2.0 - Test APK and Play Bundle
 on:
   push:
-    branches: [ main, bluetooth-mic-app ]
+    branches: [main, bluetooth-mic-app]
   workflow_dispatch:
 
 jobs:
-  build:
+  android:
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -15,27 +15,51 @@ jobs:
         with:
           distribution: temurin
           java-version: '17'
-      - name: Install Android SDK 35
+      - name: Install Android SDK 36
         run: |
           SDKMANAGER=$(find "$ANDROID_HOME/cmdline-tools" -type f -name sdkmanager | sort -V | tail -1)
-          if [ -z "$SDKMANAGER" ]; then echo "sdkmanager missing"; exit 1; fi
+          test -n "$SDKMANAGER"
           yes | "$SDKMANAGER" --licenses >/dev/null || true
-          "$SDKMANAGER" "platforms;android-35" "build-tools;35.0.0"
+          "$SDKMANAGER" "platforms;android-36" "build-tools;35.0.0"
       - uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: '8.11.1'
-      - name: Test core audio processing
+      - name: Test PCM DSP engine (12 voice presets)
         run: |
           mkdir -p /tmp/pocketpa-tests
           javac -d /tmp/pocketpa-tests app/src/main/java/com/niru/pocketpa/AudioProcessor.java tests/AudioProcessorSmokeTest.java
           java -cp /tmp/pocketpa-tests com.niru.pocketpa.AudioProcessorSmokeTest
-      - name: Build installable debug APK
-        run: gradle --no-daemon :app:assembleDebug
-      - name: Prepare APK
-        run: cp app/build/outputs/apk/debug/app-debug.apk PocketPA-debug.apk
+      - name: Restore Play upload key if secrets are configured
+        env:
+          ENCODED_UPLOAD_KEY: ${{ secrets.POCKETPA_KEYSTORE_BASE64 }}
+        run: |
+          if [ -n "$ENCODED_UPLOAD_KEY" ]; then
+            printf '%s' "$ENCODED_UPLOAD_KEY" | base64 --decode > "$GITHUB_WORKSPACE/upload-key.jks"
+          fi
+      - name: Build debug APK and release bundle
+        env:
+          POCKETPA_KEYSTORE_FILE: ${{ github.workspace }}/upload-key.jks
+          POCKETPA_KEYSTORE_PASSWORD: ${{ secrets.POCKETPA_KEYSTORE_PASSWORD }}
+          POCKETPA_KEY_ALIAS: ${{ secrets.POCKETPA_KEY_ALIAS }}
+          POCKETPA_KEY_PASSWORD: ${{ secrets.POCKETPA_KEY_PASSWORD }}
+        run: gradle --no-daemon :app:assembleDebug :app:bundleRelease
+      - name: Package outputs
+        run: |
+          cp app/build/outputs/apk/debug/app-debug.apk PocketPA-v2-debug.apk
+          if [ -f upload-key.jks ]; then
+            cp app/build/outputs/bundle/release/app-release.aab PocketPA-v2-signed-release.aab
+          else
+            cp app/build/outputs/bundle/release/app-release.aab PocketPA-v2-UNSIGNED-release.aab
+          fi
       - uses: actions/upload-artifact@v4
         with:
-          name: PocketPA-Android-APK
-          path: PocketPA-debug.apk
-          retention-days: 30
+          name: PocketPA-v2-Debug-APK
+          path: PocketPA-v2-debug.apk
           if-no-files-found: error
+          retention-days: 30
+      - uses: actions/upload-artifact@v4
+        with:
+          name: PocketPA-v2-Play-Bundle
+          path: PocketPA-v2-*.aab
+          if-no-files-found: error
+          retention-days: 30

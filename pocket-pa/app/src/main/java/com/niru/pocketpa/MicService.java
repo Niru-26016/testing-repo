@@ -33,6 +33,7 @@ public final class MicService extends Service {
 
     public static volatile boolean running = false;
     public static volatile String lastError = null;
+    public static volatile float audioLevel = 0f;
     private static volatile float inputGain = 1.0f;
     private static volatile float outputGain = 1.0f;
     private static volatile String effect = AudioProcessor.CLEAN;
@@ -174,6 +175,14 @@ public final class MicService extends Service {
                 }
                 if (count < 0) throw new IllegalStateException("Mic error: " + count);
                 if (count == 0) continue;
+                double sum = 0.0;
+                for (int i = 0; i < count; i++) {
+                    double val = samples[i] / 32768.0;
+                    sum += val * val;
+                }
+                // Fast rise, gentle decay; 0..1 true input level for the UI meter.
+                float measured = (float) Math.min(1.0, Math.sqrt(sum / count) * 3.0);
+                audioLevel = Math.max(measured, audioLevel * 0.90f);
                 processor.process(samples, count, inputGain, outputGain, effect, gate, sensitivity);
                 int written = 0;
                 while (active && written < count) {
@@ -191,6 +200,7 @@ public final class MicService extends Service {
         } finally {
             active = false;
             running = false;
+            audioLevel = 0f;
             if (record != null) {
                 try { if (record.getRecordingState() == AudioRecord.RECORDSTATE_RECORDING) record.stop(); }
                 catch (Exception ignored) { }

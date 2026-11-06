@@ -2,16 +2,44 @@ plugins {
     id 'com.android.application'
 }
 
+def uploadFile = System.getenv('POCKETPA_KEYSTORE_FILE')
+def uploadPassword = System.getenv('POCKETPA_KEYSTORE_PASSWORD')
+def uploadAlias = System.getenv('POCKETPA_KEY_ALIAS')
+def keyPassword = System.getenv('POCKETPA_KEY_PASSWORD')
+def hasSigning = uploadFile && uploadPassword && uploadAlias && keyPassword && file(uploadFile).exists()
+
 android {
     namespace 'com.niru.pocketpa'
-    compileSdk 35
+    compileSdk 36
 
     defaultConfig {
         applicationId 'com.niru.pocketpa'
         minSdk 26
-        targetSdk 35
-        versionCode 1
-        versionName '0.1.0'
+        targetSdk 36
+        versionCode 2
+        versionName '2.0.0'
+    }
+
+    signingConfigs {
+        release {
+            if (hasSigning) {
+                storeFile file(uploadFile)
+                storePassword uploadPassword
+                keyAlias uploadAlias
+                keyPassword keyPassword
+            }
+        }
+    }
+
+    buildTypes {
+        debug {
+            applicationIdSuffix '.debug'
+            versionNameSuffix '-debug'
+        }
+        release {
+            minifyEnabled false
+            if (hasSigning) signingConfig signingConfigs.release
+        }
     }
 
     compileOptions {
