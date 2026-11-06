@@ -1,0 +1,39 @@
+name: Build Pocket PA APK
+on:
+  push:
+    branches: [ bluetooth-mic-app ]
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: android-actions/setup-android@v3
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.11.1'
+      - name: Test core audio processing
+        working-directory: pocket-pa
+        run: |
+          mkdir -p /tmp/pocketpa-tests
+          javac -d /tmp/pocketpa-tests app/src/main/java/com/niru/pocketpa/AudioProcessor.java tests/AudioProcessorSmokeTest.java
+          java -cp /tmp/pocketpa-tests com.niru.pocketpa.AudioProcessorSmokeTest
+      - name: Build installable debug APK
+        working-directory: pocket-pa
+        run: gradle --no-daemon :app:assembleDebug
+      - name: Prepare APK
+        working-directory: pocket-pa
+        run: cp app/build/outputs/apk/debug/app-debug.apk PocketPA-debug.apk
+      - uses: actions/upload-artifact@v4
+        with:
+          name: PocketPA-Android-APK
+          path: pocket-pa/PocketPA-debug.apk
+          retention-days: 30
+          if-no-files-found: error
