@@ -1,6 +1,6 @@
-# Pocket PA 2.0 — live Bluetooth microphone and voice studio
+# Instant Mic 2.1 — live Bluetooth microphone and voice studio
 
-Pocket PA is an **original, offline Android microphone app**, not a copy of another company's code. Speak into your phone and hear the processed voice on your selected audio output (including connected Bluetooth speakers). Bluetooth codec delay varies by device and cannot be eliminated in software.
+Instant Mic is an **original, offline Android microphone app**, not a copy of another company's code. Speak into your phone and hear the processed voice on your selected audio output (including connected Bluetooth speakers). Bluetooth codec delay varies by device and cannot be eliminated in software.
 
 ## What's in v2
 - Redesigned dark UI with a live audio level meter and large one-tap Start/Stop control

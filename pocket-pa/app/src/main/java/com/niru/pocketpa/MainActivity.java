@@ -114,7 +114,7 @@ public final class MainActivity extends Activity {
         symbol.setBackground(round(LIME, 17, null));
         header.addView(symbol, new LinearLayout.LayoutParams(dp(51), dp(51)));
         LinearLayout identity = vertical();
-        identity.addView(label("Pocket PA", 23, WHITE, Typeface.BOLD));
+        identity.addView(label("Instant Mic", 23, WHITE, Typeface.BOLD));
         TextView caption = label("LIVE AUDIO • VOICE STUDIO", 10, MUTED, Typeface.BOLD);
         caption.setLetterSpacing(0.14f);
         identity.addView(caption);
@@ -310,7 +310,7 @@ public final class MainActivity extends Activity {
         privacy.setPadding(dp(8), dp(10), dp(8), dp(10));
         privacy.setOnClickListener(v -> new AlertDialog.Builder(this)
                 .setTitle("Your privacy matters")
-                .setMessage("Pocket PA accesses your microphone only after you press Start. Audio is processed on your phone and streamed to your chosen output. It is not saved, collected, shared, or transmitted to a server. A foreground notification lets you stop playback at any time. Bluetooth permission is only used to show available device names. You can stop the mic or revoke permissions in Android Settings.")
+                .setMessage("Instant Mic accesses your microphone only after you press Start. Audio is processed on your phone and streamed to your chosen output. It is not saved, collected, shared, or transmitted to a server. A foreground notification lets you stop playback at any time. Bluetooth permission is only used to show available device names. You can stop the mic or revoke permissions in Android Settings.")
                 .setPositiveButton("Got it", null).show());
         page.addView(privacy);
     }

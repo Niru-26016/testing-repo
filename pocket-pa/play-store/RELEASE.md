@@ -1,10 +1,10 @@
-# Pocket PA — release runbook
+# Instant Mic — release runbook
 
 ## Build
 
 The repository workflow builds:
-- **PocketPA-v2-debug.apk:** for device testing; uses `com.niru.pocketpa.debug` so it can coexist with a later Play version.
-- **PocketPA-v2-UNSIGNED-release.aab:** *not uploadable to Play* until signed. A successful build is not a Play Store approval.
+- **InstantMic-v2.1-debug.apk:** for device testing; uses `com.niru.pocketpa.debug` so it can coexist with a later Play version.
+- **InstantMic-v2.1-UNSIGNED-release.aab:** *not uploadable to Play* until signed. A successful build is not a Play Store approval.
 
 ## Create an upload key on your own trusted machine
 
@@ -25,7 +25,7 @@ The workflow creates a signed AAB only if all four values are configured. Keep k
 
 1. Create an app with application ID `com.niru.pocketpa`.
 2. Enroll in Play App Signing and create an internal testing release.
-3. Upload the **signed** `PocketPA-v2-signed-release.aab` from the workflow.
+3. Upload the **signed** `InstantMic-v2.1-signed-release.aab` from the workflow.
 4. Add screenshots from a real device, the included listing copy, 512×512 icon, 1024×500 feature graphic, and a public privacy-policy URL.
 5. Fill out Data safety, app access, permissions, and content rating forms honestly.
 6. Run testing and apply for production access when eligible.

@@ -1,14 +1,14 @@
-# Pocket PA — Google Play listing draft
+# Instant Mic — Google Play listing draft
 
-**App title:** Pocket PA: Live Bluetooth Mic
+**App title:** Instant Mic: Phone to Speaker
 
-**Short description:** Use your phone as a live mic for speakers, with 12 fun voice effects.
+**Short description:** Turn your phone into a Bluetooth mic with 12 fun voice effects.
 
 ## Full description
 
 Your pocket-sized microphone is ready whenever you are.
 
-Pocket PA turns your Android phone into a live microphone for your Bluetooth speaker or other selected audio output. Make announcements, practice karaoke, speak to a group, or experiment with real-time voice effects — without creating an account and without an internet connection.
+Instant Mic turns your Android phone into a live microphone for your Bluetooth speaker or other selected audio output. Make announcements, practice karaoke, speak to a group, or experiment with real-time voice effects — without creating an account and without an internet connection.
 
 Features:
 - Start and stop live microphone audio with one tap

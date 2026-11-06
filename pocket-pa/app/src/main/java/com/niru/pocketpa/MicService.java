@@ -109,7 +109,7 @@ public final class MicService extends Service {
                 PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE);
         return new Notification.Builder(this, CHANNEL)
                 .setSmallIcon(com.niru.pocketpa.R.drawable.ic_mic)
-                .setContentTitle("Pocket PA · microphone live")
+                .setContentTitle("Instant Mic · microphone live")
                 .setContentText("Your voice is being sent to the media speaker")
                 .setContentIntent(openAction)
                 .addAction(android.R.drawable.ic_media_pause, "Stop microphone", stopAction)
