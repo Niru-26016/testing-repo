@@ -11,7 +11,7 @@ jobs:
   android:
     runs-on: ubuntu-latest
     permissions:
-      contents: read
+      contents: write
     defaults:
       run:
         working-directory: pocket-pa
@@ -69,3 +69,18 @@ jobs:
           path: pocket-pa/InstantMic-v2.2-*.aab
           if-no-files-found: error
           retention-days: 30
+
+      - name: Publish directly downloadable testing APK
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          TAG="instant-mic-v2.2"
+          FILE="InstantMic-v2.2-debug.apk"
+          if gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            gh release upload "$TAG" "$FILE" --clobber --repo "$GITHUB_REPOSITORY"
+          else
+            gh release create "$TAG" "$FILE" --repo "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" \
+              --title "Instant Mic v2.2 - Android test build" \
+              --notes "Android debug APK with 18 effects and optional device echo cancellation. For testing only; not a Play Store release." \
+              --prerelease
+          fi
