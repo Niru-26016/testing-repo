@@ -1,31 +1,27 @@
-# Privacy Policy — Instant Mic
+# Instant Mic Privacy Policy
 
-**Effective date: November 6, 2026**
+Last updated 7 November 2026
 
-Instant Mic is an offline microphone and voice-effects app for Android, developed as an independent project. This policy explains its use of device data.
+Instant Mic is an Android app for playing live phone microphone audio through a compatible audio output. The developer’s contact details appear under App support on the Instant Mic: Phone to Speaker Google Play listing.
 
-## Audio and microphone
+## Microphone and audio output
 
-The app asks for microphone access when you tap **Start Microphone**. Sound is processed in memory on the phone, with optional live voice effects, then sent to the device's chosen audio output (such as a connected Bluetooth speaker). **Instant Mic does not record or store audio**, does not upload sound, and does not transmit microphone data to any server. Mic capture stops when you press Stop, stop the foreground notification, or the Android system stops the service.
+Instant Mic requests microphone access when you tap **Start**. It processes the live sound in memory on your phone and passes it to Android for playback on the active output. When the active output is a connected Bluetooth accessory, Android sends the live sound to that accessory. People within range of a speaker can hear the audio it plays.
 
-## Bluetooth and notifications
+An active session can continue when you leave the app screen. Tap **Stop** in the app or, if allowed, in the active microphone notification to end it. Android can also end the session. The app discards the audio buffers when the session ends. It saves no recordings and sends no audio to the developer or to internet servers.
 
-On supported Android versions, Bluetooth permission is requested only to detect or display connected audio output device information. Notifications are used to indicate active microphone streaming and provide a Stop action. You can deny notifications without disabling the core mic function.
+## Connected devices and notifications
 
-## Data collection, sharing, retention
+Instant Mic displays the connected audio output names that Android provides so you can choose where to play your audio. It uses these names on the phone and does not upload them. You pair Bluetooth accessories in Android Settings.
 
-Instant Mic has no internet permission, no advertising SDK, no analytics SDK, and no tracking. It does not collect, share, sell, or retain personal data. Settings such as selected voice preset, levels, and gate sensitivity are saved locally using Android SharedPreferences. You can delete these settings by clearing app storage or uninstalling the app.
+The active microphone notification shows that a live session is running and provides a Stop action when notifications are allowed.
 
-## Children and safety
+## Data handling and retention
 
-The app does not knowingly collect information from children. Loud output can cause feedback or hearing discomfort; start with a low speaker volume and keep the phone away from the speaker.
+The app uses no internet permission, account, advertising, analytics or tracking. It stores preferences such as your voice preset, gain and noise-gate settings in its private app storage. You can delete those preferences by clearing app storage or uninstalling the app. The developer does not receive or retain your audio, device names or settings from the app. Android manages the connection to your selected accessory.
 
-## Controls
-
-Microphone, Bluetooth and notification permissions can be changed any time in Android Settings. The app is designed to function completely offline.
+You can revoke microphone and notification access at any time in Android Settings.
 
 ## Contact
 
-For questions, open an issue at: https://github.com/Niru-26016/testing-repo/issues
-
-Changes to this policy will be published in the app's source repository before release.
+For privacy questions, use the developer email under App support on the Instant Mic Google Play listing.

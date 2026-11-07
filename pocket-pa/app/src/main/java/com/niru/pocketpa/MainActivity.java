@@ -3,6 +3,7 @@ package com.niru.pocketpa;
 import android.Manifest;
 import android.app.Activity;
 import android.app.AlertDialog;
+import android.content.ActivityNotFoundException;
 import android.content.Intent;
 import android.content.SharedPreferences;
 import android.content.pm.PackageManager;
@@ -10,8 +11,11 @@ import android.content.res.ColorStateList;
 import android.graphics.Color;
 import android.graphics.Typeface;
 import android.graphics.drawable.GradientDrawable;
+import android.graphics.drawable.RippleDrawable;
+import android.media.AudioDeviceCallback;
 import android.media.AudioDeviceInfo;
 import android.media.AudioManager;
+import android.net.Uri;
 import android.os.Build;
 import android.os.Bundle;
 import android.os.Handler;
@@ -21,6 +25,7 @@ import android.view.Gravity;
 import android.view.View;
 import android.view.WindowInsets;
 import android.widget.Button;
+import android.widget.ImageView;
 import android.widget.LinearLayout;
 import android.widget.ScrollView;
 import android.widget.SeekBar;
@@ -31,14 +36,14 @@ import java.util.List;
 
 /** Offline and accessible Android UI. Deliberately no ads, analytics or trackers. */
 public final class MainActivity extends Activity {
-    private static final int BG = Color.rgb(10, 14, 22);
-    private static final int PANEL = Color.rgb(23, 30, 43);
-    private static final int PANEL_LIGHT = Color.rgb(35, 45, 61);
-    private static final int LIME = Color.rgb(199, 248, 114);
-    private static final int PURPLE = Color.rgb(177, 159, 255);
-    private static final int WHITE = Color.rgb(247, 250, 253);
-    private static final int MUTED = Color.rgb(155, 171, 191);
-    private static final int RED = Color.rgb(255, 124, 132);
+    private static final int BG = Color.rgb(25, 27, 32);
+    private static final int PANEL = Color.rgb(34, 37, 43);
+    private static final int PANEL_LIGHT = Color.rgb(49, 52, 60);
+    private static final int ORANGE = Color.rgb(255, 140, 66);
+    private static final int WHITE = Color.rgb(248, 243, 236);
+    private static final int MUTED = Color.rgb(194, 189, 184);
+    private static final int RED = Color.rgb(255, 142, 142);
+    private static final int BORDER = Color.rgb(68, 67, 72);
     private static final String[] ICONS = {"◉", "↓", "↑", "♬", "☠", "◈", "↓", "↑", "▦", "✦", "★", "〰", "↝", "◎", "◈", "☎", "⚡", "◆"};
     private static final String[] DESCRIPTIONS = {
             "Natural voice", "Low male-style", "Higher female-style", "Little kid", "Scary growl", "Spooky floating",
@@ -46,7 +51,6 @@ public final class MainActivity extends Activity {
             "Repeating tail", "Big reverb", "Vintage sound", "Narrow-band", "Loud & gritty", "Overdrive"
     };
     private static final int REQUEST_AUDIO = 100;
-    private static final int REQUEST_BLUETOOTH = 101;
     private static final int REQUEST_NOTIFICATIONS = 102;
     private final Handler handler = new Handler(Looper.getMainLooper());
     private final List<LinearLayout> presetCards = new ArrayList<>();
@@ -61,7 +65,20 @@ public final class MainActivity extends Activity {
     };
 
     private SharedPreferences prefs;
+    private AudioManager audioManager;
+    private List<AudioDeviceInfo> bluetoothOutputs = new ArrayList<>();
+    private AudioDeviceInfo preferredOutput;
+    private int outputSelection = MediaOutput.AUTOMATIC;
+    private boolean resumed;
+    private boolean startAfterPermission;
+    private final AudioDeviceCallback outputCallback = new AudioDeviceCallback() {
+        @Override public void onAudioDevicesAdded(AudioDeviceInfo[] added) { refreshOutputs(); }
+        @Override public void onAudioDevicesRemoved(AudioDeviceInfo[] removed) { refreshOutputs(); }
+    };
+
     private TextView speakerName;
+    private Button chooseOutputButton;
+    private Button notificationButton;
     private TextView statusLabel;
     private TextView levelLabel;
     private TextView activePreset;
@@ -72,13 +89,20 @@ public final class MainActivity extends Activity {
     private String selectedEffect;
     private boolean noiseGate;
     private boolean reduceEcho;
-    private boolean lastRunning = false;
+    private MicService.State lastState;
+    private int lastPeak = -1;
 
     @Override public void onCreate(Bundle state) {
         super.onCreate(state);
         prefs = getSharedPreferences("pocketpa_prefs", MODE_PRIVATE);
+        audioManager = getSystemService(AudioManager.class);
+        setVolumeControlStream(AudioManager.STREAM_MUSIC);
+        if (state != null) {
+            outputSelection = state.getInt("output_device", MediaOutput.AUTOMATIC);
+            startAfterPermission = state.getBoolean("start_after_permission");
+        }
         micPercent = prefs.getInt("mic", 100);
-        outputPercent = prefs.getInt("out", 100);
+        outputPercent = prefs.getInt("out", 45);
         sensitivity = prefs.getInt("sensitivity", 55);
         selectedEffect = prefs.getString("effect", AudioProcessor.CLEAN);
         noiseGate = prefs.getBoolean("gate", false);
@@ -87,72 +111,65 @@ public final class MainActivity extends Activity {
         outputPercent = Math.max(0, Math.min(150, outputPercent));
         sensitivity = Math.max(0, Math.min(100, sensitivity));
         buildInterface();
-        refreshStatus();
+        refreshOutputs();
     }
 
+    @Override protected void onSaveInstanceState(Bundle state) {
+        super.onSaveInstanceState(state);
+        state.putInt("output_device", outputSelection);
+        state.putBoolean("start_after_permission", startAfterPermission);
+    }
+
+    @SuppressWarnings("deprecation") // Android 15+ enforces edge-to-edge; opt in on Android 11–14.
     private void buildInterface() {
-        getWindow().setStatusBarColor(BG);
-        getWindow().setNavigationBarColor(BG);
-        getWindow().getDecorView().setSystemUiVisibility(0);
         ScrollView scroll = new ScrollView(this);
+        scroll.setId(R.id.home_scroll);
         scroll.setFillViewport(true);
         scroll.setBackgroundColor(BG);
-        scroll.setClipToPadding(false);
         LinearLayout page = vertical();
         page.setPadding(dp(20), dp(27), dp(20), dp(34));
         scroll.addView(page);
         if (Build.VERSION.SDK_INT >= 30) {
-            getWindow().setDecorFitsSystemWindows(false);
+            if (Build.VERSION.SDK_INT < 35) getWindow().setDecorFitsSystemWindows(false);
             scroll.setOnApplyWindowInsetsListener((view, insets) -> {
-                android.graphics.Insets bars = insets.getInsets(WindowInsets.Type.systemBars());
-                page.setPadding(dp(20), dp(26) + bars.top, dp(20), dp(34) + bars.bottom);
+                android.graphics.Insets safe = insets.getInsets(
+                        WindowInsets.Type.systemBars() | WindowInsets.Type.displayCutout());
+                view.setPadding(safe.left, safe.top, safe.right, safe.bottom);
                 return insets;
             });
         }
         setContentView(scroll);
 
         LinearLayout header = horizontal(Gravity.CENTER_VERTICAL);
-        TextView symbol = label("◉", 29, BG, Typeface.BOLD);
-        symbol.setGravity(Gravity.CENTER);
-        symbol.setBackground(round(LIME, 17, null));
-        header.addView(symbol, new LinearLayout.LayoutParams(dp(51), dp(51)));
+        ImageView symbol = new ImageView(this);
+        symbol.setImageResource(R.drawable.ic_mic);
+        symbol.setImageTintList(ColorStateList.valueOf(BG));
+        symbol.setPadding(dp(10), dp(10), dp(10), dp(10));
+        symbol.setBackground(round(ORANGE, 14, null));
+        symbol.setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_NO);
+        header.addView(symbol, new LinearLayout.LayoutParams(dp(46), dp(46)));
         LinearLayout identity = vertical();
-        identity.addView(label("Instant Mic", 23, WHITE, Typeface.BOLD));
-        TextView caption = label("LIVE AUDIO • VOICE STUDIO", 10, MUTED, Typeface.BOLD);
-        caption.setLetterSpacing(0.14f);
-        identity.addView(caption);
+        identity.addView(label(getString(R.string.app_name), 23, WHITE, Typeface.BOLD));
+        identity.addView(label(getString(R.string.tagline), 13, MUTED, Typeface.NORMAL));
         LinearLayout.LayoutParams identityLp = new LinearLayout.LayoutParams(0, -2, 1);
-        identityLp.leftMargin = dp(13);
+        identityLp.setMarginStart(dp(13));
         header.addView(identity, identityLp);
-        TextView version = label("V2.2", 10, LIME, Typeface.BOLD);
-        version.setGravity(Gravity.CENTER);
-        version.setBackground(round(PANEL_LIGHT, 11, null));
-        header.addView(version, new LinearLayout.LayoutParams(dp(47), dp(30)));
         page.addView(header);
-        gap(page, 26);
+        gap(page, 22);
 
-        LinearLayout hero = vertical();
-        hero.setPadding(dp(21), dp(22), dp(21), dp(22));
-        GradientDrawable gradient = new GradientDrawable(GradientDrawable.Orientation.TL_BR,
-                new int[]{Color.rgb(49, 48, 84), Color.rgb(26, 43, 69), Color.rgb(24, 32, 45)});
-        gradient.setCornerRadius(dp(25));
-        gradient.setStroke(dp(1), Color.rgb(68, 70, 102));
-        hero.setBackground(gradient);
-        TextView eyebrow = label("YOUR STAGE, ANYWHERE", 11, LIME, Typeface.BOLD);
-        eyebrow.setLetterSpacing(0.15f);
-        hero.addView(eyebrow);
-        gap(hero, 12);
-        TextView title = label("Turn your phone\ninto a microphone.", 29, WHITE, Typeface.BOLD);
-        title.setLineSpacing(dp(3), 1f);
+        LinearLayout hero = card(page);
+        TextView title = label("Your phone is the mic", 27, WHITE, Typeface.BOLD);
+        if (Build.VERSION.SDK_INT >= 28) title.setAccessibilityHeading(true);
         hero.addView(title);
-        gap(hero, 9);
-        TextView subtitle = label("Speak or sing through your connected Bluetooth speaker. No internet needed.", 14, MUTED, Typeface.NORMAL);
-        subtitle.setLineSpacing(dp(3), 1f);
+        gap(hero, 8);
+        TextView subtitle = label("Play your voice through a compatible Bluetooth speaker, car stereo, or headphones.", 14, MUTED, Typeface.NORMAL);
+        subtitle.setLineSpacing(dp(2), 1f);
         hero.addView(subtitle);
-        gap(hero, 19);
+        gap(hero, 12);
 
         LinearLayout meter = horizontal(Gravity.BOTTOM);
         meter.setGravity(Gravity.CENTER);
+        meter.setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_NO_HIDE_DESCENDANTS);
         for (int i = 0; i < 21; i++) {
             View bar = new View(this);
             bar.setBackground(round(PANEL_LIGHT, 4, null));
@@ -165,55 +182,54 @@ public final class MainActivity extends Activity {
         hero.addView(meter, new LinearLayout.LayoutParams(-1, dp(48)));
         gap(hero, 8);
         LinearLayout liveStrip = horizontal(Gravity.CENTER_VERTICAL);
-        statusLabel = label("READY TO GO LIVE", 11, WHITE, Typeface.BOLD);
-        statusLabel.setLetterSpacing(0.07f);
+        statusLabel = label(getString(R.string.status_ready), 13, WHITE, Typeface.BOLD);
+        statusLabel.setAccessibilityLiveRegion(View.ACCESSIBILITY_LIVE_REGION_POLITE);
         liveStrip.addView(statusLabel, new LinearLayout.LayoutParams(0, -2, 1));
-        levelLabel = label("MIC OFF", 11, MUTED, Typeface.BOLD);
+        levelLabel = label(getString(R.string.mic_off), 11, MUTED, Typeface.BOLD);
+        levelLabel.setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_NO);
         liveStrip.addView(levelLabel);
         hero.addView(liveStrip);
-        gap(hero, 17);
-        micButton = button("●  START MICROPHONE", true);
-        micButton.setTextSize(17);
-        micButton.setContentDescription("Start microphone broadcast");
+        gap(hero, 14);
+        micButton = button(getString(R.string.start_microphone), true);
+        micButton.setTextSize(16);
+        micButton.setMinHeight(dp(56));
         micButton.setOnClickListener(v -> toggleMicrophone());
-        hero.addView(micButton, new LinearLayout.LayoutParams(-1, dp(66)));
-        page.addView(hero);
-        gap(page, 18);
+        hero.addView(micButton, new LinearLayout.LayoutParams(-1, -2));
+        gap(hero, 9);
+        hero.addView(label("The mic can stay live when you leave this screen. Tap Stop to end the session. Audio is never saved.",
+                12, MUTED, Typeface.NORMAL));
+        gap(hero, 7);
+        hero.addView(label("Bluetooth adds delay. Start at low volume and keep the speaker away from the phone.",
+                12, MUTED, Typeface.NORMAL));
+        gap(page, 14);
 
         LinearLayout outputCard = card(page);
-        LinearLayout outputRow = horizontal(Gravity.CENTER_VERTICAL);
-        TextView deviceIcon = label("◖))", 23, PURPLE, Typeface.BOLD);
-        deviceIcon.setGravity(Gravity.CENTER);
-        deviceIcon.setBackground(round(PANEL_LIGHT, 13, null));
-        outputRow.addView(deviceIcon, new LinearLayout.LayoutParams(dp(54), dp(54)));
-        LinearLayout info = vertical();
-        info.addView(label("CONNECTED AUDIO OUTPUT", 10, MUTED, Typeface.BOLD));
-        gap(info, 5);
-        speakerName = label("Checking output…", 15, WHITE, Typeface.BOLD);
-        info.addView(speakerName);
-        LinearLayout.LayoutParams infoLp = new LinearLayout.LayoutParams(0, -2, 1);
-        infoLp.leftMargin = dp(13);
-        outputRow.addView(info, infoLp);
-        outputCard.addView(outputRow);
-        gap(outputCard, 14);
-        Button connect = button("Bluetooth settings  ↗", false);
-        connect.setContentDescription("Open Bluetooth settings to connect a speaker");
-        connect.setOnClickListener(v -> {
-            try { startActivity(new Intent(Settings.ACTION_BLUETOOTH_SETTINGS)); }
-            catch (Exception e) { speakerName.setText("Open Bluetooth in Android Settings"); }
-        });
-        outputCard.addView(connect, new LinearLayout.LayoutParams(-1, dp(46)));
-        if (Build.VERSION.SDK_INT >= 31 && checkSelfPermission(Manifest.permission.BLUETOOTH_CONNECT) != PackageManager.PERMISSION_GRANTED) {
-            gap(outputCard, 7);
-            TextView permission = label("Allow Bluetooth permission to show the speaker name", 12, PURPLE, Typeface.BOLD);
-            permission.setPadding(0, dp(6), 0, dp(6));
-            permission.setOnClickListener(v -> requestPermissions(new String[]{Manifest.permission.BLUETOOTH_CONNECT}, REQUEST_BLUETOOTH));
-            outputCard.addView(permission);
-        }
-        gap(page, 27);
+        TextView outputHeading = label(getString(R.string.output_heading), 16, WHITE, Typeface.BOLD);
+        if (Build.VERSION.SDK_INT >= 28) outputHeading.setAccessibilityHeading(true);
+        outputCard.addView(outputHeading);
+        gap(outputCard, 5);
+        speakerName = label(getString(R.string.output_system), 14, ORANGE, Typeface.NORMAL);
+        outputCard.addView(speakerName);
+        gap(outputCard, 12);
+        chooseOutputButton = button(getString(R.string.choose_output), false);
+        chooseOutputButton.setOnClickListener(v -> chooseOutput());
+        outputCard.addView(chooseOutputButton, new LinearLayout.LayoutParams(-1, -2));
+        gap(outputCard, 6);
+        Button connect = button(getString(R.string.connect_bluetooth), false);
+        connect.setOnClickListener(v -> openSettings(new Intent(Settings.ACTION_BLUETOOTH_SETTINGS)));
+        outputCard.addView(connect, new LinearLayout.LayoutParams(-1, -2));
+        notificationButton = button(getString(R.string.enable_notification), false);
+        notificationButton.setOnClickListener(v -> enableNotifications());
+        LinearLayout.LayoutParams notificationParams = new LinearLayout.LayoutParams(-1, -2);
+        notificationParams.topMargin = dp(6);
+        outputCard.addView(notificationButton, notificationParams);
+        gap(page, 24);
 
-        section(page, "VOICE STUDIO", "Choose your live voice", "18 voice styles • switch instantly while speaking");
-        gap(page, 15);
+        section(page, "VOICE EFFECTS", "Change how you sound", "18 optional presets • switch while live");
+        gap(page, 13);
+        activePreset = label(getString(R.string.current_preset, selectedEffect), 13, ORANGE, Typeface.BOLD);
+        page.addView(activePreset);
+        gap(page, 10);
         String[] effects = AudioProcessor.EFFECTS;
         for (int i = 0; i < effects.length; i += 2) {
             LinearLayout pair = horizontal(Gravity.TOP);
@@ -221,17 +237,21 @@ public final class MainActivity extends Activity {
                 final String chosen = effects[j];
                 LinearLayout option = vertical();
                 option.setPadding(dp(14), dp(15), dp(12), dp(14));
-                TextView glyph = label(ICONS[j], 23, PURPLE, Typeface.BOLD);
+                TextView glyph = label(ICONS[j], 23, ORANGE, Typeface.BOLD);
                 option.addView(glyph);
                 gap(option, 9);
                 TextView effectTitle = label(chosen, 15, WHITE, Typeface.BOLD);
-                effectTitle.setSingleLine(true);
                 option.addView(effectTitle);
                 gap(option, 3);
-                option.addView(label(DESCRIPTIONS[j], 11, MUTED, Typeface.NORMAL));
+                TextView effectDescription = label(DESCRIPTIONS[j], 11, MUTED, Typeface.NORMAL);
+                option.addView(effectDescription);
                 option.setContentDescription(chosen + " effect. " + DESCRIPTIONS[j]);
                 option.setFocusable(true);
+                option.setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_YES);
                 option.setClickable(true);
+                glyph.setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_NO);
+                effectTitle.setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_NO);
+                effectDescription.setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_NO);
                 option.setOnClickListener(v -> {
                     selectedEffect = chosen;
                     updateSelectedPreset();
@@ -239,38 +259,36 @@ public final class MainActivity extends Activity {
                 });
                 presetCards.add(option);
                 presetTitles.add(effectTitle);
-                LinearLayout.LayoutParams optionLp = new LinearLayout.LayoutParams(0, dp(114), 1f);
-                if (j % 2 == 1) optionLp.leftMargin = dp(11);
+                option.setMinimumHeight(dp(110));
+                LinearLayout.LayoutParams optionLp = new LinearLayout.LayoutParams(0, -1, 1f);
+                if (j % 2 == 1) optionLp.setMarginStart(dp(11));
                 pair.addView(option, optionLp);
             }
             page.addView(pair);
             gap(page, 11);
         }
-        activePreset = label("Current preset: " + selectedEffect, 12, LIME, Typeface.BOLD);
-        activePreset.setGravity(Gravity.CENTER);
-        page.addView(activePreset);
         updateSelectedPreset();
         gap(page, 24);
 
         section(page, "MIXER", "Fine-tune your sound", "Make adjustments while live");
         gap(page, 15);
         LinearLayout mixer = card(page);
-        TextView micPercentLabel = label(micPercent + "%", 14, LIME, Typeface.BOLD);
+        TextView micPercentLabel = label(getString(R.string.percent, micPercent), 14, ORANGE, Typeface.BOLD);
         addSlider(mixer, "MIC INPUT", "Voice capture level", micPercentLabel, micPercent, 200, value -> {
             micPercent = value;
-            micPercentLabel.setText(value + "%");
+            micPercentLabel.setText(getString(R.string.percent, value));
             saveSettings();
         });
         gap(mixer, 23);
-        TextView outputPercentLabel = label(outputPercent + "%", 14, LIME, Typeface.BOLD);
-        addSlider(mixer, "SPEAKER OUTPUT", "Output boost and volume", outputPercentLabel, outputPercent, 150, value -> {
+        TextView outputPercentLabel = label(getString(R.string.percent, outputPercent), 14, ORANGE, Typeface.BOLD);
+        addSlider(mixer, "OUTPUT GAIN", "Adjust the app’s playback level", outputPercentLabel, outputPercent, 150, value -> {
             outputPercent = value;
-            outputPercentLabel.setText(value + "%");
+            outputPercentLabel.setText(getString(R.string.percent, value));
             saveSettings();
         });
         gap(page, 24);
 
-        section(page, "FEEDBACK CONTROL", "Less echo, clearer speech", "Noise gate and device echo cancellation");
+        section(page, "ECHO & NOISE", "Reduce unwanted sound", "Noise gate and optional Android echo cancellation");
         gap(page, 15);
         LinearLayout feedback = card(page);
         LinearLayout switchRow = horizontal(Gravity.CENTER_VERTICAL);
@@ -281,7 +299,10 @@ public final class MainActivity extends Activity {
         switchRow.addView(switchCopy, new LinearLayout.LayoutParams(0, -2, 1));
         Switch gateSwitch = new Switch(this);
         gateSwitch.setChecked(noiseGate);
-        gateSwitch.setThumbTintList(new ColorStateList(new int[][]{new int[]{android.R.attr.state_checked}, new int[]{}}, new int[]{LIME, MUTED}));
+        gateSwitch.setContentDescription("Noise gate");
+        gateSwitch.setMinWidth(dp(48));
+        gateSwitch.setMinHeight(dp(48));
+        gateSwitch.setThumbTintList(new ColorStateList(new int[][]{new int[]{android.R.attr.state_checked}, new int[]{}}, new int[]{ORANGE, MUTED}));
         switchRow.addView(gateSwitch);
         feedback.addView(switchRow);
         gateSwitch.setOnCheckedChangeListener((compound, checked) -> {
@@ -300,10 +321,13 @@ public final class MainActivity extends Activity {
         echoRow.addView(echoCopy, new LinearLayout.LayoutParams(0, -2, 1));
         Switch echoSwitch = new Switch(this);
         echoSwitch.setEnabled(supportsAec);
+        echoSwitch.setContentDescription("Reduce speaker echo");
+        echoSwitch.setMinWidth(dp(48));
+        echoSwitch.setMinHeight(dp(48));
         echoSwitch.setChecked(supportsAec && reduceEcho);
         echoSwitch.setThumbTintList(new ColorStateList(
                 new int[][]{new int[]{android.R.attr.state_checked}, new int[]{}},
-                new int[]{LIME, MUTED}));
+                new int[]{ORANGE, MUTED}));
         echoRow.addView(echoSwitch);
         feedback.addView(echoRow);
         echoSwitch.setOnCheckedChangeListener((compound, checked) -> {
@@ -311,75 +335,148 @@ public final class MainActivity extends Activity {
             saveSettings();
         });
         gap(feedback, 12);
-        feedback.addView(label("Echo reduction works best after stopping and restarting the mic. Bluetooth delay can defeat cancellation.", 12, MUTED, Typeface.NORMAL));
+        feedback.addView(label("Echo cancellation depends on the phone and audio route. Bluetooth delay and physical feedback can still occur.", 12, MUTED, Typeface.NORMAL));
         gap(feedback, 20);
-        TextView gateValue = label(sensitivity + "%", 14, LIME, Typeface.BOLD);
+        TextView gateValue = label(getString(R.string.percent, sensitivity), 14, ORANGE, Typeface.BOLD);
         addSlider(feedback, "GATE SENSITIVITY", "Higher catches softer voices", gateValue, sensitivity, 100, value -> {
             sensitivity = value;
-            gateValue.setText(value + "%");
+            gateValue.setText(getString(R.string.percent, value));
             saveSettings();
         });
         gap(page, 22);
 
         LinearLayout tipCard = vertical();
         tipCard.setPadding(dp(17), dp(17), dp(17), dp(17));
-        tipCard.setBackground(round(Color.rgb(33, 34, 45), 18, Color.rgb(74, 68, 89)));
-        tipCard.addView(label("✧  SOUND CHECK TIP", 12, PURPLE, Typeface.BOLD));
+        tipCard.setBackground(round(PANEL, 18, BORDER));
+        tipCard.addView(label("✧  SOUND CHECK TIP", 12, ORANGE, Typeface.BOLD));
         gap(tipCard, 8);
-        TextView hint = label("Keep the speaker 2+ metres away and pointed away from the phone. Start with speaker output at 40–60% and mic gain at 80–100%. Select Clean, Man, Woman or Child instead of Echo/Cave. Bluetooth delay varies by device.", 13, MUTED, Typeface.NORMAL);
+        TextView hint = label("Point the speaker away from the phone and raise volume slowly. If you hear squealing, lower the volume or use headphones. Choose Clean to hear your natural voice.", 13, MUTED, Typeface.NORMAL);
         hint.setLineSpacing(dp(3), 1f);
         tipCard.addView(hint);
         page.addView(tipCard);
         gap(page, 22);
 
-        TextView privacy = label("Privacy & microphone usage  •  100% offline", 12, MUTED, Typeface.NORMAL);
-        privacy.setGravity(Gravity.CENTER);
-        privacy.setPadding(dp(8), dp(10), dp(8), dp(10));
+        Button privacy = button(getString(R.string.privacy_title), false);
         privacy.setOnClickListener(v -> new AlertDialog.Builder(this)
-                .setTitle("Your privacy matters")
-                .setMessage("Instant Mic accesses your microphone only after you press Start. Audio is processed on your phone and streamed to your chosen output. It is not saved, collected, shared, or transmitted to a server. A foreground notification lets you stop playback at any time. Bluetooth permission is only used to show available device names. You can stop the mic or revoke permissions in Android Settings.")
-                .setPositiveButton("Got it", null).show());
-        page.addView(privacy);
+                .setTitle(R.string.privacy_title)
+                .setMessage(R.string.privacy_policy)
+                .setPositiveButton(android.R.string.ok, null).show());
+        page.addView(privacy, new LinearLayout.LayoutParams(-1, -2));
+    }
+
+    private void chooseOutput() {
+        refreshOutputs();
+        List<AudioDeviceInfo> choices = bluetoothOutputs;
+        CharSequence[] names = new CharSequence[choices.size() + 2];
+        names[0] = getString(R.string.output_auto);
+        names[1] = getString(R.string.output_system);
+        int checked = outputSelection == MediaOutput.AUTOMATIC ? 0
+                : outputSelection == MediaOutput.SYSTEM ? 1 : -1;
+        for (int i = 0; i < choices.size(); i++) {
+            AudioDeviceInfo device = choices.get(i);
+            names[i + 2] = MediaOutput.label(this, device);
+            if (device.getId() == outputSelection) checked = i + 2;
+        }
+        new AlertDialog.Builder(this)
+                .setTitle(R.string.choose_output)
+                .setSingleChoiceItems(names, checked, (dialog, item) -> {
+                    outputSelection = item == 0 ? MediaOutput.AUTOMATIC
+                            : item == 1 ? MediaOutput.SYSTEM : choices.get(item - 2).getId();
+                    MicService.error = 0;
+                    refreshOutputs();
+                    dialog.dismiss();
+                })
+                .setNegativeButton(android.R.string.cancel, null).show();
+    }
+
+    private void refreshOutputs() {
+        bluetoothOutputs = MediaOutput.bluetoothDevices(audioManager);
+        preferredOutput = MediaOutput.preferred(audioManager, bluetoothOutputs, outputSelection);
+        refreshStatus();
     }
 
     private void toggleMicrophone() {
-        if (MicService.running) {
-            startService(new Intent(this, MicService.class).setAction(MicService.ACTION_STOP));
-        } else if (checkSelfPermission(Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) {
-            requestPermissions(new String[]{Manifest.permission.RECORD_AUDIO}, REQUEST_AUDIO);
-            return;
-        } else {
-            try {
-                startForegroundService(settingsIntent(MicService.ACTION_START));
-                if (Build.VERSION.SDK_INT >= 33 &&
-                        checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED &&
-                        !prefs.getBoolean("notification_asked", false)) {
-                    prefs.edit().putBoolean("notification_asked", true).apply();
-                    requestPermissions(new String[]{Manifest.permission.POST_NOTIFICATIONS}, REQUEST_NOTIFICATIONS);
-                }
-            } catch (Exception e) {
-                statusLabel.setText("Couldn't start: " + e.getClass().getSimpleName());
+        if (MicService.state == MicService.State.LIVE || MicService.state == MicService.State.STARTING) {
+            MicService.stop();
+            refreshStatus();
+        } else if (MicService.state == MicService.State.IDLE) {
+            if (checkSelfPermission(Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) {
+                requestPermissions(new String[]{Manifest.permission.RECORD_AUDIO}, REQUEST_AUDIO);
+            } else {
+                startAfterPermission = true;
+                startWhenVisible();
             }
         }
-        handler.postDelayed(this::refreshStatus, 240);
+    }
+
+    private void startWhenVisible() {
+        if (!resumed || !startAfterPermission || isFinishing()) return;
+        startAfterPermission = false;
+        refreshOutputs();
+        int selected = preferredOutput == null ? outputSelection : preferredOutput.getId();
+        updateServiceSettings();
+        MicService.start(this, selected);
+        refreshStatus();
+    }
+
+    private void openSettings(Intent intent) {
+        try {
+            startActivity(intent);
+        } catch (ActivityNotFoundException e) {
+            startActivity(new Intent(Settings.ACTION_SETTINGS));
+        }
+    }
+
+    private void showPermissionSettings(int title, int message, Intent settings) {
+        new AlertDialog.Builder(this)
+                .setTitle(title).setMessage(message)
+                .setPositiveButton(R.string.open_settings, (dialog, button) -> openSettings(settings))
+                .setNegativeButton(android.R.string.cancel, null).show();
+    }
+
+    private void enableNotifications() {
+        if (Build.VERSION.SDK_INT >= 33 &&
+                checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) {
+            requestPermissions(new String[]{Manifest.permission.POST_NOTIFICATIONS}, REQUEST_NOTIFICATIONS);
+        } else {
+            showNotificationSettings();
+        }
+    }
+
+    private void showNotificationSettings() {
+        showPermissionSettings(R.string.notification_permission_title, R.string.notification_permission_message,
+                new Intent(Settings.ACTION_APP_NOTIFICATION_SETTINGS)
+                        .putExtra(Settings.EXTRA_APP_PACKAGE, getPackageName()));
     }
 
     @Override public void onRequestPermissionsResult(int code, String[] permissions, int[] grants) {
         super.onRequestPermissionsResult(code, permissions, grants);
+        if (grants.length == 0) return;
         if (code == REQUEST_AUDIO) {
-            if (grants.length > 0 && grants[0] == PackageManager.PERMISSION_GRANTED) toggleMicrophone();
-            else statusLabel.setText("Microphone permission required");
-        } else if (code == REQUEST_BLUETOOTH) refreshStatus();
+            if (grants[0] == PackageManager.PERMISSION_GRANTED) {
+                startAfterPermission = true;
+                startWhenVisible();
+            } else {
+                MicService.error = R.string.error_permission;
+                refreshStatus();
+                if (!shouldShowRequestPermissionRationale(Manifest.permission.RECORD_AUDIO)) {
+                    showPermissionSettings(R.string.error_permission, R.string.mic_permission_message,
+                            new Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS,
+                                    Uri.fromParts("package", getPackageName(), null)));
+                }
+            }
+        } else if (code == REQUEST_NOTIFICATIONS) {
+            refreshNotificationButton();
+            if (grants[0] != PackageManager.PERMISSION_GRANTED &&
+                    !shouldShowRequestPermissionRationale(Manifest.permission.POST_NOTIFICATIONS)) {
+                showNotificationSettings();
+            }
+        }
     }
 
-    private Intent settingsIntent(String action) {
-        return new Intent(this, MicService.class).setAction(action)
-                .putExtra(MicService.EXTRA_MIC, micPercent / 100f)
-                .putExtra(MicService.EXTRA_OUTPUT, outputPercent / 100f)
-                .putExtra(MicService.EXTRA_EFFECT, selectedEffect)
-                .putExtra(MicService.EXTRA_GATE, noiseGate)
-                .putExtra(MicService.EXTRA_ECHO_REDUCTION, reduceEcho)
-                .putExtra(MicService.EXTRA_SENSITIVITY, sensitivity);
+    private void updateServiceSettings() {
+        MicService.updateSettings(new MicService.Settings(micPercent / 100f, outputPercent / 100f,
+                selectedEffect, noiseGate, sensitivity, reduceEcho));
     }
 
     private void saveSettings() {
@@ -387,68 +484,82 @@ public final class MainActivity extends Activity {
                 .putString("effect", selectedEffect).putBoolean("gate", noiseGate)
                 .putBoolean("reduce_echo", reduceEcho)
                 .putInt("sensitivity", sensitivity).apply();
-        if (MicService.running) startService(settingsIntent(MicService.ACTION_UPDATE));
+        updateServiceSettings();
     }
 
     private void refreshStatus() {
-        if (micButton == null || speakerName == null || statusLabel == null) return;
-        boolean running = MicService.running;
-        if (running != lastRunning) {
-            micButton.setText(running ? "■  STOP MICROPHONE" : "●  START MICROPHONE");
-            micButton.setContentDescription(running ? "Stop microphone broadcast" : "Start microphone broadcast");
-            micButton.setBackground(round(running ? RED : LIME, 17, null));
-            lastRunning = running;
+        MicService.State state = MicService.state;
+        boolean live = state == MicService.State.LIVE;
+        if (state != lastState) {
+            boolean active = state != MicService.State.IDLE;
+            micButton.setText(active ? R.string.stop_microphone : R.string.start_microphone);
+            micButton.setBackground(buttonBackground(active ? RED : ORANGE, true));
+            micButton.setEnabled(state != MicService.State.STOPPING);
+            chooseOutputButton.setEnabled(state == MicService.State.IDLE);
+            lastState = state;
         }
-        if (MicService.lastError != null && !running) statusLabel.setText(MicService.lastError);
-        else statusLabel.setText(running ? "●  YOU'RE LIVE" : "READY TO GO LIVE");
-        statusLabel.setTextColor(running ? LIME : WHITE);
-        float level = running ? MicService.audioLevel : 0f;
+        int status = switch (state) {
+            case STARTING -> R.string.status_starting;
+            case STOPPING -> R.string.status_stopping;
+            case LIVE -> R.string.status_live;
+            case IDLE -> MicService.error != 0 ? MicService.error : R.string.status_ready;
+        };
+        updateText(statusLabel, getString(status));
+        statusLabel.setTextColor(live ? ORANGE : WHITE);
+
+        float level = live ? MicService.audioLevel : 0f;
         int peak = Math.round(level * meterBars.size());
-        for (int i = 0; i < meterBars.size(); i++) {
-            View bar = meterBars.get(i);
-            LinearLayout.LayoutParams lp = (LinearLayout.LayoutParams) bar.getLayoutParams();
-            boolean lit = running && (i < peak);
-            int height = lit ? 12 + (i * 17 / meterBars.size()) : 7;
-            lp.height = dp(height);
-            bar.setLayoutParams(lp);
-            bar.setBackground(round(lit ? (i > 15 ? PURPLE : LIME) : PANEL_LIGHT, 4, null));
+        if (peak != lastPeak) {
+            for (int i = 0; i < meterBars.size(); i++) {
+                View bar = meterBars.get(i);
+                LinearLayout.LayoutParams lp = (LinearLayout.LayoutParams) bar.getLayoutParams();
+                boolean lit = i < peak;
+                lp.height = dp(lit ? 12 + (i * 17 / meterBars.size()) : 7);
+                bar.setLayoutParams(lp);
+                bar.setBackground(round(lit ? ORANGE : PANEL_LIGHT, 4, null));
+            }
+            lastPeak = peak;
         }
-        levelLabel.setText(running ? Math.round(level * 100) + "% INPUT" : "MIC OFF");
-        AudioDeviceInfo bt = findBluetoothDevice();
-        if (bt != null) {
-            String name = "Bluetooth speaker detected";
-            try {
-                CharSequence product = bt.getProductName();
-                if (product != null && product.length() > 0) name = product.toString();
-            } catch (SecurityException ignored) { }
-            speakerName.setText("●  " + name);
-            speakerName.setTextColor(LIME);
+        updateText(levelLabel, live ? getString(R.string.input_level, Math.round(level * 100))
+                : getString(R.string.mic_off));
+
+        String output;
+        if (live && MicService.activeOutput != null) {
+            output = getString(R.string.output_active, MicService.activeOutput);
+        } else if (preferredOutput != null) {
+            String name = MediaOutput.label(this, preferredOutput);
+            output = outputSelection == MediaOutput.AUTOMATIC
+                    ? getString(R.string.output_auto_device, name) : name;
+        } else if (outputSelection > 0) {
+            output = getString(R.string.error_output_lost);
         } else {
-            speakerName.setText("Phone / selected media output");
-            speakerName.setTextColor(WHITE);
+            output = getString(outputSelection == MediaOutput.AUTOMATIC
+                    ? R.string.output_no_bluetooth : R.string.output_system);
         }
+        updateText(speakerName, output);
     }
 
-    private AudioDeviceInfo findBluetoothDevice() {
-        try {
-            AudioManager manager = (AudioManager) getSystemService(AUDIO_SERVICE);
-            if (manager == null) return null;
-            for (AudioDeviceInfo device : manager.getDevices(AudioManager.GET_DEVICES_OUTPUTS)) {
-                int type = device.getType();
-                if (type == AudioDeviceInfo.TYPE_BLUETOOTH_A2DP ||
-                        (Build.VERSION.SDK_INT >= 31 && (type == AudioDeviceInfo.TYPE_BLE_HEADSET ||
-                                type == AudioDeviceInfo.TYPE_BLE_SPEAKER))) return device;
-            }
-        } catch (SecurityException ignored) { }
-        return null;
+    private void refreshNotificationButton() {
+        notificationButton.setVisibility(MicService.stopNotificationEnabled(this) ? View.GONE : View.VISIBLE);
+    }
+
+    private static void updateText(TextView view, String value) {
+        if (!value.contentEquals(view.getText())) view.setText(value);
     }
 
     @Override protected void onResume() {
         super.onResume();
-        handler.removeCallbacks(ticker);
+        resumed = true;
+        audioManager.registerAudioDeviceCallback(outputCallback, handler);
+        refreshOutputs();
+        refreshNotificationButton();
+        startWhenVisible();
         handler.post(ticker);
     }
+
     @Override protected void onPause() {
+        resumed = false;
+        audioManager.unregisterAudioDeviceCallback(outputCallback);
         handler.removeCallbacks(ticker);
         super.onPause();
     }
@@ -456,12 +567,12 @@ public final class MainActivity extends Activity {
     private void updateSelectedPreset() {
         for (int i = 0; i < presetCards.size(); i++) {
             boolean chosen = AudioProcessor.EFFECTS[i].equals(selectedEffect);
-            presetCards.get(i).setBackground(round(chosen ? Color.rgb(53, 73, 63) : PANEL,
-                    17, chosen ? LIME : Color.rgb(40, 50, 66)));
-            presetTitles.get(i).setTextColor(chosen ? LIME : WHITE);
+            presetCards.get(i).setBackground(round(chosen ? Color.rgb(62, 43, 34) : PANEL,
+                    17, chosen ? ORANGE : BORDER));
+            presetTitles.get(i).setTextColor(chosen ? ORANGE : WHITE);
             presetCards.get(i).setSelected(chosen);
         }
-        if (activePreset != null) activePreset.setText("✦  Current preset: " + selectedEffect);
+        activePreset.setText(getString(R.string.current_preset, selectedEffect));
     }
 
     private interface SliderHandler { void update(int value); }
@@ -480,8 +591,8 @@ public final class MainActivity extends Activity {
         seek.setMax(max);
         seek.setProgress(initial);
         seek.setContentDescription(title);
-        seek.setProgressTintList(ColorStateList.valueOf(LIME));
-        seek.setThumbTintList(ColorStateList.valueOf(LIME));
+        seek.setProgressTintList(ColorStateList.valueOf(ORANGE));
+        seek.setThumbTintList(ColorStateList.valueOf(ORANGE));
         seek.setProgressBackgroundTintList(ColorStateList.valueOf(PANEL_LIGHT));
         seek.setOnSeekBarChangeListener(new SeekBar.OnSeekBarChangeListener() {
             @Override public void onProgressChanged(SeekBar bar, int progress, boolean fromUser) {
@@ -490,22 +601,24 @@ public final class MainActivity extends Activity {
             @Override public void onStartTrackingTouch(SeekBar bar) { }
             @Override public void onStopTrackingTouch(SeekBar bar) { }
         });
-        parent.addView(seek, new LinearLayout.LayoutParams(-1, dp(36)));
+        parent.addView(seek, new LinearLayout.LayoutParams(-1, dp(48)));
     }
 
     private void section(LinearLayout page, String heading, String title, String sub) {
-        TextView overline = label(heading, 11, LIME, Typeface.BOLD);
+        TextView overline = label(heading, 11, ORANGE, Typeface.BOLD);
         overline.setLetterSpacing(0.17f);
         page.addView(overline);
         gap(page, 5);
-        page.addView(label(title, 21, WHITE, Typeface.BOLD));
+        TextView headingView = label(title, 21, WHITE, Typeface.BOLD);
+        if (Build.VERSION.SDK_INT >= 28) headingView.setAccessibilityHeading(true);
+        page.addView(headingView);
         gap(page, 4);
         page.addView(label(sub, 13, MUTED, Typeface.NORMAL));
     }
     private LinearLayout card(LinearLayout page) {
         LinearLayout card = vertical();
         card.setPadding(dp(18), dp(18), dp(18), dp(19));
-        card.setBackground(round(PANEL, 20, Color.rgb(43, 52, 68)));
+        card.setBackground(round(PANEL, 20, BORDER));
         page.addView(card, new LinearLayout.LayoutParams(-1, -2));
         return card;
     }
@@ -515,11 +628,19 @@ public final class MainActivity extends Activity {
         button.setText(title);
         button.setTextSize(14);
         button.setTypeface(Typeface.DEFAULT, Typeface.BOLD);
-        button.setTextColor(primary ? BG : LIME);
-        button.setBackground(round(primary ? LIME : PANEL_LIGHT, 16, null));
+        button.setTextColor(primary ? BG : ORANGE);
+        button.setBackground(buttonBackground(primary ? ORANGE : PANEL_LIGHT, primary));
+        button.setMinHeight(dp(48));
+        button.setPadding(dp(12), dp(10), dp(12), dp(10));
+        button.setStateListAnimator(null);
         button.setElevation(0);
         return button;
     }
+    private RippleDrawable buttonBackground(int color, boolean primary) {
+        int ripple = primary ? 0x33000000 : 0x33FFFFFF;
+        return new RippleDrawable(ColorStateList.valueOf(ripple), round(color, 14, null), null);
+    }
+
     private LinearLayout vertical() {
         LinearLayout layout = new LinearLayout(this);
         layout.setOrientation(LinearLayout.VERTICAL);

@@ -1,41 +1,24 @@
-# Instant Mic 2.2 — live Bluetooth microphone and voice studio
+# Instant Mic — Phone to Speaker
 
-Instant Mic is an **original, offline Android microphone app**, not a copy of another company's code. Speak into your phone and hear the processed voice on your selected audio output (including connected Bluetooth speakers). Bluetooth codec delay varies by device and cannot be eliminated in software.
+Instant Mic relays the phone microphone to a compatible Bluetooth media output, such as a portable speaker, car stereo, or earbuds. Pair in Android Settings, choose the output, then tap **Start microphone**. Use **Stop microphone** in the app or its notification to end the session.
 
-## What's in v2.2
-- Redesigned dark UI with a live audio level meter and large one-tap Start/Stop control
-- 18 live voice presets including Man, Woman, Child, Monster, Ghost and Chipmunk
-- Optional Android echo cancellation where supported, alongside the noise gate
-- Input and output gain controls; optional noise gate
-- Foreground microphone service with notification Stop action
-- Android 8.0+ (`minSdk 26`), **Android 16 target (`targetSdk 36`)**
-- No network permissions, no recording, no ads, no analytics
+## What’s in 2.3.0
 
-## Build
+- Choose a connected Bluetooth media output or let Android choose. The app displays the active output and stops when it detects an output change, so you can choose where to restart.
+- Clean voice is the default. The app also retains all 18 presets, microphone and output gain, noise gate and sensitivity, and optional Android echo reduction.
+- A foreground service keeps a session running when the app moves to the background. The app only starts the microphone after a visible user action and Android microphone permission.
+- Audio is processed in memory and sent to the selected media output. There is no saved audio, network permission, advertising, or analytics.
 
-Use JDK 17 and Gradle 8.11.1 from `pocket-pa/`:
+Bluetooth playback delay varies by the phone, codec, and receiver. Android echo reduction is device-dependent and cannot eliminate delay or acoustic feedback. Begin at low volume and keep the phone away from the speaker. Use a car’s Bluetooth media input while parked. Call-only Bluetooth profiles and phone-to-phone receiving are outside the supported workflow.
+
+## Build and test
+
+Install JDK 17 and Android SDK Platform 36. Point `ANDROID_HOME` at the SDK or open this directory in Android Studio. From `pocket-pa/`, run:
 
 ```sh
-gradle :app:assembleDebug
-# Unsigned, not publishable:
-gradle :app:bundleRelease
+./gradlew :app:testDebugUnitTest :app:lint :app:assembleDebug :app:bundleRelease
 ```
 
-The GitHub Actions workflow also runs local DSP smoke tests and generates a debug APK and release bundle. For Play submission, configure a privately held upload key as documented in [`play-store/RELEASE.md`](play-store/RELEASE.md). Without signing secrets, release AAB is **unsigned and not Play-uploadable**.
+The app supports Android 8.0+ (API 26), targets Android 16 (API 36), and uses release application ID `com.niru.pocketpa`. Install `app/build/outputs/apk/debug/app-debug.apk` for device testing. The debug package is `com.niru.pocketpa.debug` and uses a test signing certificate. Android may require uninstalling an older test APK with a different signature, which removes its local settings.
 
-## Permissions
-
-- `RECORD_AUDIO`: live mic after explicit Start.
-- `FOREGROUND_SERVICE` and `FOREGROUND_SERVICE_MICROPHONE`: mic session while app is not foregrounded, with notification.
-- `BLUETOOTH_CONNECT`: Bluetooth device name detection; optional on supported Android releases.
-- `POST_NOTIFICATIONS`: optional notification in supported Android versions.
-
-See [`PRIVACY.md`](PRIVACY.md) for the privacy policy and [`play-store/STORE_LISTING.md`](play-store/STORE_LISTING.md) for Play Store copy and release checklist.
-
-## Known limits
-
-- Character voices use lightweight pitch-based DSP, not formant correction or cloned speech; quality depends on the handset and speaker.
-- Android AEC may not work on some Bluetooth outputs because of latency or unavailable playback reference; keep phone away from speaker.
-- Some Bluetooth routes may have a significant delay or behave differently on different manufacturers' Android versions.
-- Live recording on Android is subject to microphone privacy restrictions; start while the app is visible.
-- Test the unsigned-debug APK on several real phones/speakers before publishing. The build does not prove UX or low latency.
+See the [release checklist and signing instructions](play-store/RELEASE.md), [store listing](play-store/STORE_LISTING.md), and [privacy policy draft](PRIVACY.md). [Verification and hardware test matrix](play-store/VERIFICATION.md) records what was tested and the remaining physical checks.
