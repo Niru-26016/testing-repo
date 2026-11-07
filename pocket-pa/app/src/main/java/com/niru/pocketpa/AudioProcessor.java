@@ -46,6 +46,8 @@ public final class AudioProcessor {
     private double highPassPrevious;
     private double robotPhase;
     private double radioPhase;
+    private final double gateAttack;
+    private final double gateRelease;
     private double gateEnvelope = 1.0;
     private long randomState = 0x12345678L;
 
@@ -54,6 +56,8 @@ public final class AudioProcessor {
             throw new IllegalArgumentException("Unsupported sample rate");
         }
         rate = sampleRate;
+        gateAttack = 1.0 - Math.exp(-1.0 / (rate * 0.012));
+        gateRelease = 1.0 - Math.exp(-1.0 / (rate * 0.090));
         echoBuffer = new float[Math.max(1, (int) (rate * 0.26))];
         caveBuffer = new float[Math.max(1, (int) (rate * 0.77))];
         grainLength = Math.max(128, (int) (rate * 0.045));
@@ -168,7 +172,7 @@ public final class AudioProcessor {
             echoIndex = (echoIndex + 1) % echoBuffer.length;
             caveIndex = (caveIndex + 1) % caveBuffer.length;
 
-            double smoothing = 1.0 - Math.exp(-1.0 / (rate * (target > gateEnvelope ? 0.012 : 0.090)));
+            double smoothing = target > gateEnvelope ? gateAttack : gateRelease;
             gateEnvelope += (target - gateEnvelope) * smoothing;
             pcm[i] = (short) Math.round(clip(y * gateEnvelope * outputGain) * 32767.0);
         }

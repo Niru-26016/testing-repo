@@ -1,0 +1,53 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="500" viewBox="0 0 1024 500" role="img" aria-labelledby="title desc">
+  <title id="title">Instant Mic · Phone to Speaker</title>
+  <desc id="desc">Live mic audio over Bluetooth. An orange signal runs from a phone to a speaker, alongside car and headphone icons.</desc>
+
+  <path fill="#191B20" d="M0 0h1024v500H0z"/>
+  <rect x="505" y="66" width="450" height="368" rx="44" fill="#22242B"/>
+  <rect x="506" y="67" width="448" height="366" rx="43" fill="none" stroke="#2E3037" stroke-width="2"/>
+
+  <g font-family="Avenir Next, DejaVu Sans, sans-serif">
+    <text x="101" y="146" fill="#FF8C42" font-size="18" font-weight="700" letter-spacing="3.7">INSTANT MIC</text>
+    <g fill="#F8F3EC" font-size="73" font-weight="700" letter-spacing="-3.6">
+      <text x="96" y="220">Phone to</text>
+      <text x="96" y="299">Speaker</text>
+    </g>
+    <text x="102" y="351" fill="#C0BCBA" font-size="22" font-weight="500">Live mic audio over Bluetooth</text>
+  </g>
+
+  <!-- Phone and live level meter -->
+  <g>
+    <rect x="557" y="145" width="115" height="210" rx="21" fill="#191B20" stroke="#F8F3EC" stroke-width="3.5"/>
+    <path d="M605 161h19m-22 177h25" fill="none" stroke="#797981" stroke-width="3.5" stroke-linecap="round"/>
+    <path d="M585 241v18m15-28v38m15-54v70m15-54v38m15-28v18"
+          fill="none" stroke="#FF8C42" stroke-width="5.5" stroke-linecap="round"/>
+  </g>
+
+  <!-- The bright route represents the selected audio output. -->
+  <g fill="none" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M740 232v-54a22 22 0 0 1 22-22h63M740 268v54a22 22 0 0 0 22 22h63"
+          stroke="#65636D" stroke-width="2.6" stroke-dasharray="2 8"/>
+    <path d="M672 250h135m-12-12 12 12-12 12" stroke="#FF8C42" stroke-width="4"/>
+  </g>
+  <circle cx="740" cy="250" r="8" fill="#FF8C42" stroke="#22242B" stroke-width="3.5"/>
+
+  <!-- Compact car, portable speaker and headphones. -->
+  <g fill="#191B20" stroke-width="2.5">
+    <circle cx="869" cy="156" r="39" stroke="#4E4C56"/>
+    <circle cx="869" cy="250" r="43" stroke="#FF8C42"/>
+    <circle cx="869" cy="344" r="39" stroke="#4E4C56"/>
+  </g>
+  <g fill="none" stroke-width="3" stroke-linecap="round" stroke-linejoin="round">
+    <g stroke="#CECAC6">
+      <path d="M848 160v8h42v-8l-4-6h-34zM852 154l4-10h26l4 10M852 168v4m34-4v4m-32-10h3m24 0h3"/>
+      <path d="M851 348v-6a18 18 0 0 1 36 0v6"/>
+      <rect x="850" y="343" width="9" height="15" rx="3.5"/>
+      <rect x="879" y="343" width="9" height="15" rx="3.5"/>
+    </g>
+    <g stroke="#FF8C42">
+      <rect x="854" y="229" width="30" height="42" rx="6"/>
+      <path d="M867 237h4"/>
+      <circle cx="869" cy="255" r="7.5"/>
+    </g>
+  </g>
+</svg>

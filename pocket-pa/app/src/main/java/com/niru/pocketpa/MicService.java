@@ -1,272 +1,532 @@
 package com.niru.pocketpa;
 
 import android.Manifest;
+import android.annotation.SuppressLint;
 import android.app.Notification;
 import android.app.NotificationChannel;
 import android.app.NotificationManager;
 import android.app.PendingIntent;
 import android.app.Service;
+import android.content.BroadcastReceiver;
+import android.content.Context;
 import android.content.Intent;
+import android.content.IntentFilter;
 import android.content.pm.PackageManager;
-import android.media.AudioAttributes;
+import android.content.pm.ServiceInfo;
 import android.media.AudioDeviceInfo;
+import android.media.AudioFocusRequest;
 import android.media.AudioFormat;
 import android.media.AudioManager;
 import android.media.AudioRecord;
+import android.media.AudioRecordingConfiguration;
 import android.media.AudioTrack;
 import android.media.MediaRecorder;
 import android.media.audiofx.AcousticEchoCanceler;
 import android.os.Build;
+import android.os.Handler;
 import android.os.IBinder;
+import android.os.Looper;
 import android.os.Process;
+import android.os.SystemClock;
 import android.util.Log;
+import java.util.List;
 
-/** Foreground service holding the device's microphone while the screen is locked. */
+/** A user-started microphone session. Only its worker creates, uses, or releases audio objects. */
 public final class MicService extends Service {
-    public static final String ACTION_START = "com.niru.pocketpa.START";
-    public static final String ACTION_UPDATE = "com.niru.pocketpa.UPDATE";
-    public static final String ACTION_STOP = "com.niru.pocketpa.STOP";
-    public static final String EXTRA_MIC = "mic";
-    public static final String EXTRA_OUTPUT = "output";
-    public static final String EXTRA_EFFECT = "effect";
-    public static final String EXTRA_GATE = "gate";
-    public static final String EXTRA_SENSITIVITY = "sensitivity";
-    public static final String EXTRA_ECHO_REDUCTION = "reduce_echo";
-
-    public static volatile boolean running = false;
-    public static volatile String lastError = null;
-    public static volatile float audioLevel = 0f;
-    private static volatile float inputGain = 1.0f;
-    private static volatile float outputGain = 1.0f;
-    private static volatile String effect = AudioProcessor.CLEAN;
-    private static volatile boolean gate = false;
-    private static volatile int sensitivity = 55;
-    private static volatile boolean reduceEcho = true;
-
-    private static final int RATE = 48000;
-    private static final int NOTIFICATION_ID = 101;
+    private static final String ACTION_START = "com.niru.pocketpa.START";
+    private static final String ACTION_STOP = "com.niru.pocketpa.STOP";
+    private static final String EXTRA_DEVICE = "device";
     private static final String CHANNEL = "pocketpa_microphone";
-    private Thread audioThread;
-    private volatile boolean active;
+    private static final String TAG = "InstantMic";
+    private static final int NOTIFICATION_ID = 101;
+    private static final int PCM = AudioFormat.ENCODING_PCM_16BIT;
+    private static final int INPUT = AudioFormat.CHANNEL_IN_MONO;
+    private static final int OUTPUT = AudioFormat.CHANNEL_OUT_MONO;
+    private static final int CHUNK_MS = 5;
+    private static final int IO_RETRY_MS = 2;
+
+    enum State { IDLE, STARTING, LIVE, STOPPING }
+    record Settings(float input, float output, String effect, boolean gate, int sensitivity,
+                    boolean echoReduction) { }
+
+    // The activity and service run in the same process. Only the main thread changes session state.
+    static State state = State.IDLE;
+    static int error;
+    static String activeOutput;
+    static volatile float audioLevel;
+    private static MicService owner;
+    private static volatile Settings settings = new Settings(1f, 1f, AudioProcessor.CLEAN, true, 55, true);
+
+    private final Handler main = new Handler(Looper.getMainLooper());
+    private Session session;
+    private boolean foreground;
+    private boolean destroyed;
+    private boolean receiverRegistered;
+    private final BroadcastReceiver audioSafetyReceiver = new BroadcastReceiver() {
+        @Override public void onReceive(Context context, Intent intent) {
+            if (session == null) return;
+            if (AudioManager.ACTION_AUDIO_BECOMING_NOISY.equals(intent.getAction())) {
+                if (state == State.LIVE) requestStop(session, R.string.error_output_lost);
+            } else if (AudioManager.ACTION_MICROPHONE_MUTE_CHANGED.equals(intent.getAction())) {
+                requestStop(session, R.string.error_microphone_access_changed);
+            }
+        }
+    };
+
+    static void updateSettings(Settings value) {
+        settings = value;
+    }
+
+    static boolean stopNotificationEnabled(Context context) {
+        NotificationManager manager = context.getSystemService(NotificationManager.class);
+        NotificationChannel channel = manager.getNotificationChannel(CHANNEL);
+        return manager.areNotificationsEnabled()
+                && (channel == null || channel.getImportance() != NotificationManager.IMPORTANCE_NONE);
+    }
+
+    static void start(Context context, int output) {
+        if (state != State.IDLE) return;
+        if (context.checkSelfPermission(Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) {
+            error = R.string.error_permission;
+            return;
+        }
+        error = 0;
+        activeOutput = null;
+        state = State.STARTING;
+        try {
+            if (context.startForegroundService(new Intent(context, MicService.class)
+                    .setAction(ACTION_START).putExtra(EXTRA_DEVICE, output)) == null) {
+                state = State.IDLE;
+                error = R.string.error_start;
+            }
+        } catch (IllegalStateException | SecurityException e) {
+            Log.w(TAG, "Foreground microphone service could not be started", e);
+            state = State.IDLE;
+            error = R.string.error_start;
+        }
+    }
+
+    static void stop() {
+        if (state != State.LIVE && state != State.STARTING) return;
+        if (owner != null && owner.session != null) {
+            owner.requestStop(owner.session, 0);
+        } else {
+            // A queued foreground start still has to promote before it can stop.
+            state = State.STOPPING;
+        }
+    }
 
     @Override public void onCreate() {
         super.onCreate();
-        NotificationManager manager = getSystemService(NotificationManager.class);
-        if (manager != null) {
-            manager.createNotificationChannel(new NotificationChannel(
-                    CHANNEL, "Live microphone", NotificationManager.IMPORTANCE_LOW));
-        }
+        owner = this;
+        getSystemService(NotificationManager.class).createNotificationChannel(new NotificationChannel(
+                CHANNEL, getString(R.string.notification_channel), NotificationManager.IMPORTANCE_LOW));
     }
 
     @Override public int onStartCommand(Intent intent, int flags, int startId) {
         String action = intent != null ? intent.getAction() : null;
         if (ACTION_STOP.equals(action)) {
-            active = false;
+            if (session != null) requestStop(session, 0);
+            else if (state == State.STARTING) state = State.STOPPING;
+            else if (state == State.IDLE) stopSelf();
+            return START_NOT_STICKY;
+        }
+        if (!ACTION_START.equals(action)) {
             stopSelf();
             return START_NOT_STICKY;
         }
-        if (ACTION_START.equals(action) || ACTION_UPDATE.equals(action)) {
-            updateConfiguration(intent);
-            if (ACTION_START.equals(action) && !active) {
-                if (checkSelfPermission(Manifest.permission.RECORD_AUDIO)
-                        != PackageManager.PERMISSION_GRANTED) {
-                    lastError = "Microphone permission is required.";
-                    stopSelf();
-                    return START_NOT_STICKY;
-                }
-                try {
-                    startForeground(NOTIFICATION_ID, buildNotification());
-                    active = true;
-                    running = true;
-                    lastError = null;
-                    audioThread = new Thread(this::streamMic, "PocketPA-Audio");
-                    audioThread.start();
-                } catch (Exception e) {
-                    lastError = "Unable to start microphone: " + e.getMessage();
-                    Log.e("PocketPA", "Starting foreground microphone failed", e);
-                    active = false;
-                    running = false;
-                    stopSelf();
-                }
+        if (session != null) return START_NOT_STICKY;
+        try {
+            Notification notification = buildNotification(getString(R.string.notification_active));
+            if (Build.VERSION.SDK_INT >= 30) {
+                startForeground(NOTIFICATION_ID, notification, ServiceInfo.FOREGROUND_SERVICE_TYPE_MICROPHONE);
+            } else {
+                startForeground(NOTIFICATION_ID, notification);
             }
+            foreground = true;
+            if (state == State.STOPPING) {
+                stopSelf();
+                return START_NOT_STICKY;
+            }
+            if (checkSelfPermission(Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) {
+                failStart(R.string.error_permission);
+                return START_NOT_STICKY;
+            }
+            registerAudioSafetyReceiver();
+            session = new Session(intent.getIntExtra(EXTRA_DEVICE, MediaOutput.AUTOMATIC));
+            session.worker.start();
+        } catch (RuntimeException e) {
+            Log.w(TAG, "Foreground microphone service could not be promoted", e);
+            session = null;
+            failStart(e instanceof SecurityException ? R.string.error_permission : R.string.error_start);
         }
         return START_NOT_STICKY;
     }
 
-    private static void updateConfiguration(Intent intent) {
-        inputGain = Math.max(0f, Math.min(2f, intent.getFloatExtra(EXTRA_MIC, inputGain)));
-        outputGain = Math.max(0f, Math.min(1.5f, intent.getFloatExtra(EXTRA_OUTPUT, outputGain)));
-        String newEffect = intent.getStringExtra(EXTRA_EFFECT);
-        if (newEffect != null) effect = newEffect;
-        gate = intent.getBooleanExtra(EXTRA_GATE, gate);
-        sensitivity = Math.max(0, Math.min(100, intent.getIntExtra(EXTRA_SENSITIVITY, sensitivity)));
-        reduceEcho = intent.getBooleanExtra(EXTRA_ECHO_REDUCTION, reduceEcho);
+    private void registerAudioSafetyReceiver() {
+        IntentFilter filter = new IntentFilter(AudioManager.ACTION_AUDIO_BECOMING_NOISY);
+        if (Build.VERSION.SDK_INT >= 28) filter.addAction(AudioManager.ACTION_MICROPHONE_MUTE_CHANGED);
+        if (Build.VERSION.SDK_INT >= 33) {
+            registerReceiver(audioSafetyReceiver, filter, Context.RECEIVER_NOT_EXPORTED);
+        } else {
+            registerReceiver(audioSafetyReceiver, filter);
+        }
+        receiverRegistered = true;
     }
 
-    private Notification buildNotification() {
-        Intent open = new Intent(this, MainActivity.class);
-        open.addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP | Intent.FLAG_ACTIVITY_CLEAR_TOP);
-        PendingIntent openAction = PendingIntent.getActivity(this, 0, open,
-                PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE);
-        Intent stop = new Intent(this, MicService.class).setAction(ACTION_STOP);
-        PendingIntent stopAction = PendingIntent.getService(this, 1, stop,
-                PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE);
-        return new Notification.Builder(this, CHANNEL)
-                .setSmallIcon(com.niru.pocketpa.R.drawable.ic_mic)
-                .setContentTitle("Instant Mic · microphone live")
-                .setContentText("Your voice is being sent to the media speaker")
-                .setContentIntent(openAction)
-                .addAction(android.R.drawable.ic_media_pause, "Stop microphone", stopAction)
-                .setOngoing(true)
-                .setCategory(Notification.CATEGORY_SERVICE)
-                .build();
+    private void failStart(int message) {
+        error = message;
+        state = State.STOPPING;
+        stopSelf();
     }
 
-    private void streamMic() {
-        Process.setThreadPriority(Process.THREAD_PRIORITY_AUDIO);
-        AudioRecord record = null;
-        AudioTrack speaker = null;
-        AcousticEchoCanceler echoCanceler = null;
-        try {
-            int inFormat = AudioFormat.CHANNEL_IN_MONO;
-            int outFormat = AudioFormat.CHANNEL_OUT_MONO;
-            int encoding = AudioFormat.ENCODING_PCM_16BIT;
-            int minIn = AudioRecord.getMinBufferSize(RATE, inFormat, encoding);
-            int minOut = AudioTrack.getMinBufferSize(RATE, outFormat, encoding);
-            if (minIn <= 0 || minOut <= 0) throw new IllegalStateException("PCM 48 kHz is unavailable");
+    private void requestStop(Session current, int message) {
+        if (session != current || current.stopRequested) return;
+        error = message;
+        state = State.STOPPING;
+        current.cancel();
+    }
 
-            AudioFormat recordFormat = new AudioFormat.Builder()
-                    .setEncoding(encoding).setSampleRate(RATE).setChannelMask(inFormat).build();
-            record = new AudioRecord.Builder()
-                    .setAudioSource(reduceEcho && AcousticEchoCanceler.isAvailable()
-                            ? MediaRecorder.AudioSource.VOICE_COMMUNICATION
-                            : MediaRecorder.AudioSource.MIC)
-                    .setAudioFormat(recordFormat)
-                    .setBufferSizeInBytes(Math.max(minIn * 2, 4096))
-                    .build();
-            if (record.getState() != AudioRecord.STATE_INITIALIZED) {
-                throw new IllegalStateException("Microphone could not initialize");
+    private void ready(Session current, String output) {
+        if (session != current || current.stopRequested) return;
+        activeOutput = output;
+        state = State.LIVE;
+        NotificationManager manager = getSystemService(NotificationManager.class);
+        if (Build.VERSION.SDK_INT >= 33 &&
+                checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) {
+            return;
+        }
+        if (manager.areNotificationsEnabled()) {
+            try {
+                manager.notify(NOTIFICATION_ID, buildNotification(getString(R.string.notification_live, output)));
+            } catch (SecurityException e) {
+                Log.w(TAG, "Stop notification could not be updated", e);
             }
-            // Optional platform echo canceller on the microphone audio session.
-            // Bluetooth A2DP may not supply a usable playback reference.
-            if (AcousticEchoCanceler.isAvailable()) {
-                try {
-                    echoCanceler = AcousticEchoCanceler.create(record.getAudioSessionId());
-                    if (echoCanceler != null) echoCanceler.setEnabled(reduceEcho);
-                } catch (RuntimeException e) {
-                    if (echoCanceler != null) {
-                        echoCanceler.release();
-                        echoCanceler = null;
-                    }
-                    Log.w("InstantMic", "Echo cancellation unavailable", e);
-                }
-            }
+        }
+    }
 
-            AudioAttributes attributes = new AudioAttributes.Builder()
-                    .setUsage(AudioAttributes.USAGE_MEDIA)
-                    .setContentType(AudioAttributes.CONTENT_TYPE_SPEECH)
-                    .build();
-            speaker = new AudioTrack.Builder()
-                    .setAudioAttributes(attributes)
-                    .setAudioFormat(new AudioFormat.Builder().setEncoding(encoding)
-                            .setSampleRate(RATE).setChannelMask(outFormat).build())
-                    .setTransferMode(AudioTrack.MODE_STREAM)
-                    .setBufferSizeInBytes(Math.max(minOut * 2, 4096))
-                    .setPerformanceMode(AudioTrack.PERFORMANCE_MODE_LOW_LATENCY)
-                    .build();
-            if (speaker.getState() != AudioTrack.STATE_INITIALIZED) {
-                throw new IllegalStateException("Speaker audio could not initialize");
-            }
-
-            // Prefer a paired A2DP/BLE media output. Android otherwise routes USAGE_MEDIA.
-            AudioDeviceInfo preferred = findBluetoothMediaOutput();
-            if (preferred != null) {
-                try { speaker.setPreferredDevice(preferred); }
-                catch (SecurityException ignored) { /* Media route remains system default. */ }
-            }
-
-            AudioProcessor processor = new AudioProcessor(RATE);
-            short[] samples = new short[480]; // 10ms PCM chunks; codec buffering still applies.
-            record.startRecording();
-            speaker.play();
-            boolean lastEchoSetting = reduceEcho;
-            while (active && !Thread.currentThread().isInterrupted()) {
-                if (echoCanceler != null && lastEchoSetting != reduceEcho) {
-                    try { echoCanceler.setEnabled(reduceEcho); }
-                    catch (RuntimeException e) { Log.w("InstantMic", "AEC setting could not change", e); }
-                    lastEchoSetting = reduceEcho;
-                }
-                int count = record.read(samples, 0, samples.length, AudioRecord.READ_BLOCKING);
-                if (count == AudioRecord.ERROR_DEAD_OBJECT) {
-                    throw new IllegalStateException("Microphone was disconnected");
-                }
-                if (count < 0) throw new IllegalStateException("Mic error: " + count);
-                if (count == 0) continue;
-                double sum = 0.0;
-                for (int i = 0; i < count; i++) {
-                    double val = samples[i] / 32768.0;
-                    sum += val * val;
-                }
-                // Fast rise, gentle decay; 0..1 true input level for the UI meter.
-                float measured = (float) Math.min(1.0, Math.sqrt(sum / count) * 3.0);
-                audioLevel = Math.max(measured, audioLevel * 0.90f);
-                processor.process(samples, count, inputGain, outputGain, effect, gate, sensitivity);
-                int written = 0;
-                while (active && written < count) {
-                    int result = speaker.write(samples, written, count - written, AudioTrack.WRITE_BLOCKING);
-                    if (result < 0) throw new IllegalStateException("Speaker error: " + result);
-                    if (result == 0) break;
-                    written += result;
-                }
-            }
-        } catch (Exception e) {
-            if (active) {
-                lastError = "Audio stopped: " + e.getMessage();
-                Log.e("PocketPA", "Mic streaming stopped unexpectedly", e);
-            }
-        } finally {
-            active = false;
-            running = false;
-            audioLevel = 0f;
-            if (echoCanceler != null) {
-                try { echoCanceler.release(); } catch (RuntimeException ignored) { }
-            }
-            if (record != null) {
-                try { if (record.getRecordingState() == AudioRecord.RECORDSTATE_RECORDING) record.stop(); }
-                catch (Exception ignored) { }
-                record.release();
-            }
-            if (speaker != null) {
-                try { if (speaker.getPlayState() == AudioTrack.PLAYSTATE_PLAYING) speaker.stop(); }
-                catch (Exception ignored) { }
-                speaker.release();
-            }
+    private void finished(Session current, int failure) {
+        if (session != current) return;
+        if (!current.stopRequested) error = failure;
+        session = null;
+        activeOutput = null;
+        audioLevel = 0f;
+        if (destroyed) {
+            state = State.IDLE;
+        } else {
+            state = State.STOPPING;
             stopSelf();
         }
     }
 
-    /** Return the live media output or null if Android should choose default. */
-    public AudioDeviceInfo findBluetoothMediaOutput() {
-        try {
-            AudioManager manager = (AudioManager) getSystemService(AUDIO_SERVICE);
-            if (manager == null) return null;
-            for (AudioDeviceInfo device : manager.getDevices(AudioManager.GET_DEVICES_OUTPUTS)) {
-                int type = device.getType();
-                if (type == AudioDeviceInfo.TYPE_BLUETOOTH_A2DP ||
-                        (Build.VERSION.SDK_INT >= 31 && (type == AudioDeviceInfo.TYPE_BLE_HEADSET ||
-                                type == AudioDeviceInfo.TYPE_BLE_SPEAKER))) {
-                    return device;
+    private Notification buildNotification(String description) {
+        Intent open = new Intent(this, MainActivity.class)
+                .addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP | Intent.FLAG_ACTIVITY_CLEAR_TOP);
+        PendingIntent openAction = PendingIntent.getActivity(this, 0, open, PendingIntent.FLAG_IMMUTABLE);
+        Intent stop = new Intent(this, MicService.class).setAction(ACTION_STOP);
+        PendingIntent stopAction = PendingIntent.getService(this, 1, stop, PendingIntent.FLAG_IMMUTABLE);
+        Notification.Builder builder = new Notification.Builder(this, CHANNEL)
+                .setSmallIcon(R.drawable.ic_mic)
+                .setContentTitle(getString(R.string.notification_title))
+                .setContentText(description)
+                .setContentIntent(openAction)
+                .addAction(new Notification.Action.Builder(null, getString(R.string.stop_microphone), stopAction)
+                        .build())
+                .setOngoing(true)
+                .setOnlyAlertOnce(true)
+                .setVisibility(Notification.VISIBILITY_PRIVATE)
+                .setCategory(Notification.CATEGORY_SERVICE);
+        if (Build.VERSION.SDK_INT >= 31) builder.setForegroundServiceBehavior(Notification.FOREGROUND_SERVICE_IMMEDIATE);
+        return builder.build();
+    }
+
+    private final class Session {
+        private final Thread worker = new Thread(this::stream, "InstantMic-Audio");
+        private final AudioManager audioManager = getSystemService(AudioManager.class);
+        private final int outputSelection;
+        private volatile boolean stopRequested;
+        private volatile float focusVolume = 1f;
+
+        Session(int outputSelection) {
+            this.outputSelection = outputSelection;
+        }
+
+        void cancel() {
+            stopRequested = true;
+            worker.interrupt();
+        }
+
+        private void onAudioFocusChanged(int change) {
+            if (change == AudioManager.AUDIOFOCUS_LOSS_TRANSIENT_CAN_DUCK) {
+                focusVolume = 0.2f;
+            } else if (change < 0) {
+                requestStop(this, R.string.error_audio_interrupted);
+            } else {
+                focusVolume = 1f;
+            }
+        }
+
+        @SuppressLint("MissingPermission") // Checked before promotion and handled if revoked while starting.
+        private void stream() {
+            AudioFocusRequest focus = new AudioFocusRequest.Builder(AudioManager.AUDIOFOCUS_GAIN_TRANSIENT)
+                    .setAudioAttributes(MediaOutput.ATTRIBUTES)
+                    .setWillPauseWhenDucked(true)
+                    .setOnAudioFocusChangeListener(this::onAudioFocusChanged, main)
+                    .build();
+            AudioTrack speaker = null;
+            AudioRecord record = null;
+            AcousticEchoCanceler echoCanceler = null;
+            boolean focusGranted = false;
+            int failure = 0;
+            try {
+                Process.setThreadPriority(Process.THREAD_PRIORITY_AUDIO);
+                if (audioManager.isMicrophoneMute()) {
+                    throw new StreamFailure(R.string.error_microphone_access_changed);
+                }
+                focusGranted = audioManager.requestAudioFocus(focus) == AudioManager.AUDIOFOCUS_REQUEST_GRANTED;
+                if (!focusGranted) throw new StreamFailure(R.string.error_audio_busy);
+
+                AudioDeviceInfo preferred = MediaOutput.preferred(audioManager,
+                        MediaOutput.bluetoothDevices(audioManager), outputSelection);
+                if (preferred == null && outputSelection > 0) throw new StreamFailure(R.string.error_output_lost);
+
+                int rate = chooseSampleRate();
+                speaker = new AudioTrack.Builder().setAudioAttributes(MediaOutput.ATTRIBUTES)
+                        .setAudioFormat(format(rate, OUTPUT))
+                        .setTransferMode(AudioTrack.MODE_STREAM)
+                        .setBufferSizeInBytes(AudioTrack.getMinBufferSize(rate, OUTPUT, PCM))
+                        .setPerformanceMode(AudioTrack.PERFORMANCE_MODE_LOW_LATENCY)
+                        .build();
+                if (speaker.getState() != AudioTrack.STATE_INITIALIZED) {
+                    throw new StreamFailure(R.string.error_audio_setup);
+                }
+                if (preferred != null && !speaker.setPreferredDevice(preferred)) {
+                    throw new StreamFailure(R.string.error_output_unavailable);
+                }
+
+                // Keep app-side chunks short. Bluetooth may buffer additional audio.
+                short[] samples = new short[rate * CHUNK_MS / 1000];
+                speaker.play();
+                List<AudioDeviceInfo> initialRoute = waitForOutput(speaker, preferred, samples);
+                String output = describeRoute(initialRoute);
+
+                record = new AudioRecord.Builder().setAudioSource(MediaRecorder.AudioSource.MIC)
+                        .setAudioFormat(format(rate, INPUT))
+                        .setBufferSizeInBytes(Math.max(2 * AudioRecord.getMinBufferSize(rate, INPUT, PCM),
+                                samples.length * 4))
+                        .build();
+                if (record.getState() != AudioRecord.STATE_INITIALIZED) {
+                    throw new StreamFailure(R.string.error_audio_setup);
+                }
+                for (AudioDeviceInfo input : audioManager.getDevices(AudioManager.GET_DEVICES_INPUTS)) {
+                    if (input.getType() == AudioDeviceInfo.TYPE_BUILTIN_MIC && record.setPreferredDevice(input)) break;
+                }
+                echoCanceler = createEchoCanceler(record);
+                boolean echoEnabled = settings.echoReduction();
+                setEchoReduction(echoCanceler, echoEnabled);
+
+                if (stopRequested) return;
+                record.startRecording();
+                if (record.getRecordingState() != AudioRecord.RECORDSTATE_RECORDING) {
+                    throw new StreamFailure(R.string.error_microphone_busy);
+                }
+                checkCapture(record);
+                main.post(() -> ready(this, output));
+
+                AudioProcessor processor = new AudioProcessor(rate);
+                long checkInputAt = 0;
+                float appliedVolume = 1f;
+                while (!stopRequested) {
+                    float volume = focusVolume;
+                    if (volume != appliedVolume) {
+                        speaker.setVolume(volume);
+                        appliedVolume = volume;
+                    }
+                    Settings current = settings;
+                    if (echoEnabled != current.echoReduction()) {
+                        echoEnabled = current.echoReduction();
+                        setEchoReduction(echoCanceler, echoEnabled);
+                    }
+                    long now = SystemClock.elapsedRealtime();
+                    if (now >= checkInputAt) {
+                        checkCapture(record);
+                        checkInputAt = now + 250;
+                    }
+                    int count = record.read(samples, 0, samples.length, AudioRecord.READ_NON_BLOCKING);
+                    if (count < 0) throw new StreamFailure(R.string.error_microphone_busy);
+                    if (count == 0) {
+                        checkOutput(speaker, initialRoute);
+                        Thread.sleep(IO_RETRY_MS);
+                        continue;
+                    }
+                    updateLevel(samples, count);
+                    processor.process(samples, count, current.input(), current.output(),
+                            current.effect(), current.gate(), current.sensitivity());
+                    // Check before each write, including when Android temporarily stops exposing a route.
+                    int written = 0;
+                    while (!stopRequested && written < count) {
+                        checkOutput(speaker, initialRoute);
+                        int result = speaker.write(samples, written, count - written, AudioTrack.WRITE_NON_BLOCKING);
+                        if (result < 0) throw new StreamFailure(R.string.error_output_lost);
+                        if (result == 0) Thread.sleep(IO_RETRY_MS);
+                        written += result;
+                    }
+                }
+            } catch (StreamFailure e) {
+                failure = e.message;
+            } catch (InterruptedException ignored) {
+                Thread.currentThread().interrupt();
+            } catch (SecurityException e) {
+                failure = R.string.error_permission;
+                Log.w(TAG, "Microphone access was denied", e);
+            } catch (RuntimeException e) {
+                failure = R.string.error_audio_setup;
+                Log.w(TAG, "Live audio stopped", e);
+            } finally {
+                release(speaker, record, echoCanceler);
+                if (focusGranted) {
+                    try {
+                        audioManager.abandonAudioFocusRequest(focus);
+                    } catch (RuntimeException e) {
+                        Log.w(TAG, "Could not abandon audio focus", e);
+                    }
+                }
+                int result = failure;
+                main.post(() -> finished(this, result));
+            }
+        }
+
+        private List<AudioDeviceInfo> waitForOutput(AudioTrack speaker, AudioDeviceInfo preferred, short[] silence)
+                throws StreamFailure, InterruptedException {
+            long deadline = SystemClock.elapsedRealtime() + 2500;
+            while (!stopRequested && SystemClock.elapsedRealtime() < deadline) {
+                List<AudioDeviceInfo> routed = MediaOutput.routedDevices(speaker);
+                if (!routed.isEmpty() && (preferred == null
+                        || (routed.size() == 1 && routed.get(0).getId() == preferred.getId()))) {
+                    return routed;
+                }
+                if (speaker.write(silence, 0, silence.length, AudioTrack.WRITE_NON_BLOCKING) < 0) break;
+                Thread.sleep(CHUNK_MS);
+            }
+            throw new StreamFailure(R.string.error_output_unavailable);
+        }
+    }
+
+    private static int chooseSampleRate() throws StreamFailure {
+        int nativeRate = AudioTrack.getNativeOutputSampleRate(AudioManager.STREAM_MUSIC);
+        int first = nativeRate == 44100 ? 44100 : 48000;
+        int second = first == 44100 ? 48000 : 44100;
+        for (int rate : new int[]{first, second}) {
+            if (AudioRecord.getMinBufferSize(rate, INPUT, PCM) > 0
+                    && AudioTrack.getMinBufferSize(rate, OUTPUT, PCM) > 0) return rate;
+        }
+        throw new StreamFailure(R.string.error_audio_setup);
+    }
+
+    private static AudioFormat format(int rate, int channelMask) {
+        return new AudioFormat.Builder().setEncoding(PCM).setSampleRate(rate)
+                .setChannelMask(channelMask).build();
+    }
+
+    private static void checkOutput(AudioTrack speaker, List<AudioDeviceInfo> expected) throws StreamFailure {
+        List<AudioDeviceInfo> routed = MediaOutput.routedDevices(speaker);
+        // Device IDs, not object equality or route order, identify the current sinks.
+        if (routed.size() != expected.size()) throw new StreamFailure(R.string.error_output_lost);
+        for (AudioDeviceInfo wanted : expected) {
+            boolean found = false;
+            for (AudioDeviceInfo actual : routed) {
+                if (wanted.getId() == actual.getId()) {
+                    found = true;
+                    break;
                 }
             }
-        } catch (SecurityException ignored) { }
+            if (!found) throw new StreamFailure(R.string.error_output_lost);
+        }
+    }
+
+    private String describeRoute(List<AudioDeviceInfo> devices) {
+        if (devices.size() > 1) return getString(R.string.output_multiple);
+        return MediaOutput.label(this, devices.get(0));
+    }
+
+    private static void checkCapture(AudioRecord record) throws StreamFailure {
+        AudioDeviceInfo input = record.getRoutedDevice();
+        if (input != null && input.getType() != AudioDeviceInfo.TYPE_BUILTIN_MIC) {
+            throw new StreamFailure(R.string.error_microphone_route);
+        }
+        if (Build.VERSION.SDK_INT >= 29) {
+            AudioRecordingConfiguration configuration = record.getActiveRecordingConfiguration();
+            if (configuration != null && configuration.isClientSilenced()) {
+                throw new StreamFailure(R.string.error_microphone_busy);
+            }
+        }
+    }
+
+    private static AcousticEchoCanceler createEchoCanceler(AudioRecord record) {
+        try {
+            if (AcousticEchoCanceler.isAvailable()) return AcousticEchoCanceler.create(record.getAudioSessionId());
+        } catch (RuntimeException e) {
+            Log.w(TAG, "AEC could not attach to the microphone", e);
+        }
         return null;
     }
 
+    private static void setEchoReduction(AcousticEchoCanceler aec, boolean enabled) {
+        if (aec == null) return;
+        try {
+            if (aec.setEnabled(enabled) != AcousticEchoCanceler.SUCCESS) {
+                Log.w(TAG, "AEC is unavailable on this audio path");
+            }
+        } catch (RuntimeException e) {
+            Log.w(TAG, "AEC could not be configured", e);
+        }
+    }
+
+    private static void updateLevel(short[] samples, int count) {
+        double sum = 0.0;
+        for (int i = 0; i < count; i++) {
+            double value = samples[i] / 32768.0;
+            sum += value * value;
+        }
+        float measured = (float) Math.min(1.0, Math.sqrt(sum / count) * 3.0);
+        audioLevel = Math.max(measured, audioLevel * 0.90f);
+    }
+
+    private static void release(AudioTrack speaker, AudioRecord record, AcousticEchoCanceler aec) {
+        if (speaker != null) {
+            // Drop queued audio rather than draining to a newly selected route.
+            try { speaker.pause(); speaker.flush(); } catch (RuntimeException e) { Log.w(TAG, "Output cleanup", e); }
+            try { speaker.release(); } catch (RuntimeException e) { Log.w(TAG, "Output release", e); }
+        }
+        if (aec != null) {
+            try { aec.release(); } catch (RuntimeException e) { Log.w(TAG, "AEC release", e); }
+        }
+        if (record != null) {
+            try { record.stop(); } catch (RuntimeException e) { Log.w(TAG, "Microphone cleanup", e); }
+            try { record.release(); } catch (RuntimeException e) { Log.w(TAG, "Microphone release", e); }
+        }
+    }
+
+    private static final class StreamFailure extends Exception {
+        final int message;
+
+        StreamFailure(int message) {
+            this.message = message;
+        }
+    }
+
     @Override public void onDestroy() {
-        active = false;
-        running = false;
-        if (audioThread != null) audioThread.interrupt();
-        stopForeground(STOP_FOREGROUND_REMOVE);
+        destroyed = true;
+        if (owner == this) owner = null;
+        if (session != null) {
+            // In unexpected teardown, hold STOPPING until the old worker releases its audio objects.
+            state = State.STOPPING;
+            session.cancel();
+        } else {
+            state = State.IDLE;
+        }
+        if (receiverRegistered) unregisterReceiver(audioSafetyReceiver);
+        if (foreground) stopForeground(STOP_FOREGROUND_REMOVE);
         super.onDestroy();
     }
 
