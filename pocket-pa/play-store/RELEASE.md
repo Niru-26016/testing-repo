@@ -1,12 +1,12 @@
 # Instant Mic Play Console submission checklist
 
-Policy checked 7 November 2026. Release candidate **2.3.0**, version code **5**, package `com.niru.pocketpa`. The app supports Android 8.0 and later and targets Android 16 (API 36).
+Policy checked 7 November 2026. Release candidate **1.0**, version code **6**, package `com.niru.pocketpa`. The app supports Android 8.0 and later and targets Android 16 (API 36).
 
 ## 1. Sign the release bundle
 
-The supplied testing APK is debug-signed and installs as `com.niru.pocketpa.debug`. The release AAB is unsigned. **Play Console cannot accept it until it is signed with your upload key.**
+The testing APK, `InstantMic-v1.0-test.apk`, is debug-signed and installs as `com.niru.pocketpa.debug`. The release AAB, `InstantMic-v1.0-UNSIGNED-release.aab`, requires your upload signature before Play Console will accept it. Both are in `Instant-Mic-1.0-Play-Store-Kit.zip`.
 
-- If Instant Mic already has a Play listing, open that listing and use its registered **upload key**. If you lost it, request an upload-key reset in Play Console. Check that version code 5 is unused and higher than previous uploads. If needed, bump the version code in `app/build.gradle` and rebuild before signing.
+- If Instant Mic already has a Play listing, open that listing and use its registered **upload key**. If you lost it, request an upload-key reset in Play Console. Check that version code 6 is unused and higher than previous uploads. If needed, bump the version code in `app/build.gradle` and rebuild before signing.
 - For a first listing, create an upload key on a trusted machine. Use a private directory outside the source checkout and an encrypted backup. The following commands prompt for passwords. Replace the example paths with your own. Use JDK 17 or newer for these commands.
 
 ```sh
@@ -20,10 +20,10 @@ Sign a separate copy of the delivered AAB. If using an existing key, substitute 
 
 ```sh
 jarsigner -keystore "/private/path/instant-mic-upload.p12" \
-  -signedjar "InstantMic-v2.3.0-signed-release.aab" \
-  "InstantMic-v2.3.0-UNSIGNED-release.aab" instant-mic-upload
-jarsigner -verify -verbose -certs "InstantMic-v2.3.0-signed-release.aab"
-keytool -printcert -jarfile "InstantMic-v2.3.0-signed-release.aab"
+  -signedjar "InstantMic-v1.0-signed-release.aab" \
+  "InstantMic-v1.0-UNSIGNED-release.aab" instant-mic-upload
+jarsigner -verify -verbose -certs "InstantMic-v1.0-signed-release.aab"
+keytool -printcert -jarfile "InstantMic-v1.0-signed-release.aab"
 ```
 
 Verify that `jarsigner` reports a verified signature. A newly generated upload certificate is self-signed. For an existing listing, compare the SHA-256 fingerprint with the **upload key certificate** in Play Console’s App integrity page. If Play asks for the public certificate, export only that certificate using `keytool -exportcert -rfc -keystore "/private/path/instant-mic-upload.p12" -alias instant-mic-upload -file instant-mic-upload.pem`. Keep the private keystore and passwords out of Git, the deliverables, chat and shell history.

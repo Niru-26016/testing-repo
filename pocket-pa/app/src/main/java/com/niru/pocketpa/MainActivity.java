@@ -32,6 +32,7 @@ import android.widget.SeekBar;
 import android.widget.Switch;
 import android.widget.TextView;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.List;
 
 /** Offline and accessible Android UI. Deliberately no ads, analytics or trackers. */
@@ -44,6 +45,8 @@ public final class MainActivity extends Activity {
     private static final int MUTED = Color.rgb(194, 189, 184);
     private static final int RED = Color.rgb(255, 142, 142);
     private static final int BORDER = Color.rgb(68, 67, 72);
+    private static final List<String> FEATURED_PRESETS = Arrays.asList(
+            AudioProcessor.CLEAN, AudioProcessor.MAN, AudioProcessor.ROBOT, AudioProcessor.HELIUM);
     private static final String[] ICONS = {"◉", "↓", "↑", "♬", "☠", "◈", "↓", "↑", "▦", "✦", "★", "〰", "↝", "◎", "◈", "☎", "⚡", "◆"};
     private static final String[] DESCRIPTIONS = {
             "Natural voice", "Low male-style", "Higher female-style", "Little kid", "Scary growl", "Spooky floating",
@@ -53,9 +56,10 @@ public final class MainActivity extends Activity {
     private static final int REQUEST_AUDIO = 100;
     private static final int REQUEST_NOTIFICATIONS = 102;
     private final Handler handler = new Handler(Looper.getMainLooper());
-    private final List<LinearLayout> presetCards = new ArrayList<>();
-    private final List<TextView> presetTitles = new ArrayList<>();
+    private final List<PresetCard> presetCards = new ArrayList<>();
     private final List<View> meterBars = new ArrayList<>();
+
+    private record PresetCard(String effect, LinearLayout view, TextView title) { }
 
     private final Runnable ticker = new Runnable() {
         @Override public void run() {
@@ -87,6 +91,7 @@ public final class MainActivity extends Activity {
     private int outputPercent;
     private int sensitivity;
     private String selectedEffect;
+    private boolean presetsExpanded;
     private boolean noiseGate;
     private boolean reduceEcho;
     private MicService.State lastState;
@@ -100,12 +105,13 @@ public final class MainActivity extends Activity {
         if (state != null) {
             outputSelection = state.getInt("output_device", MediaOutput.AUTOMATIC);
             startAfterPermission = state.getBoolean("start_after_permission");
+            presetsExpanded = state.getBoolean("presets_expanded");
         }
         micPercent = prefs.getInt("mic", 100);
         outputPercent = prefs.getInt("out", 45);
         sensitivity = prefs.getInt("sensitivity", 55);
         selectedEffect = prefs.getString("effect", AudioProcessor.CLEAN);
-        noiseGate = prefs.getBoolean("gate", false);
+        noiseGate = prefs.getBoolean("gate", true);
         reduceEcho = prefs.getBoolean("reduce_echo", true);
         micPercent = Math.max(0, Math.min(200, micPercent));
         outputPercent = Math.max(0, Math.min(150, outputPercent));
@@ -118,6 +124,7 @@ public final class MainActivity extends Activity {
         super.onSaveInstanceState(state);
         state.putInt("output_device", outputSelection);
         state.putBoolean("start_after_permission", startAfterPermission);
+        state.putBoolean("presets_expanded", presetsExpanded);
     }
 
     @SuppressWarnings("deprecation") // Android 15+ enforces edge-to-edge; opt in on Android 11–14.
@@ -227,46 +234,25 @@ public final class MainActivity extends Activity {
 
         section(page, "VOICE EFFECTS", "Change how you sound", "18 optional presets • switch while live");
         gap(page, 13);
-        activePreset = label(getString(R.string.current_preset, selectedEffect), 13, ORANGE, Typeface.BOLD);
+        activePreset = label("", 13, ORANGE, Typeface.BOLD);
         page.addView(activePreset);
         gap(page, 10);
-        String[] effects = AudioProcessor.EFFECTS;
-        for (int i = 0; i < effects.length; i += 2) {
-            LinearLayout pair = horizontal(Gravity.TOP);
-            for (int j = i; j < Math.min(i + 2, effects.length); j++) {
-                final String chosen = effects[j];
-                LinearLayout option = vertical();
-                option.setPadding(dp(14), dp(15), dp(12), dp(14));
-                TextView glyph = label(ICONS[j], 23, ORANGE, Typeface.BOLD);
-                option.addView(glyph);
-                gap(option, 9);
-                TextView effectTitle = label(chosen, 15, WHITE, Typeface.BOLD);
-                option.addView(effectTitle);
-                gap(option, 3);
-                TextView effectDescription = label(DESCRIPTIONS[j], 11, MUTED, Typeface.NORMAL);
-                option.addView(effectDescription);
-                option.setContentDescription(chosen + " effect. " + DESCRIPTIONS[j]);
-                option.setFocusable(true);
-                option.setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_YES);
-                option.setClickable(true);
-                glyph.setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_NO);
-                effectTitle.setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_NO);
-                effectDescription.setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_NO);
-                option.setOnClickListener(v -> {
-                    selectedEffect = chosen;
-                    updateSelectedPreset();
-                    saveSettings();
-                });
-                presetCards.add(option);
-                presetTitles.add(effectTitle);
-                option.setMinimumHeight(dp(110));
-                LinearLayout.LayoutParams optionLp = new LinearLayout.LayoutParams(0, -1, 1f);
-                if (j % 2 == 1) optionLp.setMarginStart(dp(11));
-                pair.addView(option, optionLp);
-            }
-            page.addView(pair);
-            gap(page, 11);
-        }
+        addPresetRows(page, FEATURED_PRESETS);
+        Button more = button(getString(presetsExpanded ? R.string.presets_show_less : R.string.presets_show_more), false);
+        page.addView(more, new LinearLayout.LayoutParams(-1, -2));
+
+        LinearLayout extraPresets = vertical();
+        gap(extraPresets, 11);
+        List<String> remaining = new ArrayList<>(Arrays.asList(AudioProcessor.EFFECTS));
+        remaining.removeAll(FEATURED_PRESETS);
+        addPresetRows(extraPresets, remaining);
+        extraPresets.setVisibility(presetsExpanded ? View.VISIBLE : View.GONE);
+        page.addView(extraPresets);
+        more.setOnClickListener(v -> {
+            presetsExpanded = !presetsExpanded;
+            more.setText(presetsExpanded ? R.string.presets_show_less : R.string.presets_show_more);
+            extraPresets.setVisibility(presetsExpanded ? View.VISIBLE : View.GONE);
+        });
         updateSelectedPreset();
         gap(page, 24);
 
@@ -564,15 +550,60 @@ public final class MainActivity extends Activity {
         super.onPause();
     }
 
-    private void updateSelectedPreset() {
-        for (int i = 0; i < presetCards.size(); i++) {
-            boolean chosen = AudioProcessor.EFFECTS[i].equals(selectedEffect);
-            presetCards.get(i).setBackground(round(chosen ? Color.rgb(62, 43, 34) : PANEL,
-                    17, chosen ? ORANGE : BORDER));
-            presetTitles.get(i).setTextColor(chosen ? ORANGE : WHITE);
-            presetCards.get(i).setSelected(chosen);
+    private void addPresetRows(LinearLayout parent, List<String> effects) {
+        List<String> allEffects = Arrays.asList(AudioProcessor.EFFECTS);
+        for (int i = 0; i < effects.size(); i += 2) {
+            LinearLayout pair = horizontal(Gravity.TOP);
+            for (int j = i; j < Math.min(i + 2, effects.size()); j++) {
+                String effect = effects.get(j);
+                int index = allEffects.indexOf(effect);
+                String title = presetName(effect);
+                String description = DESCRIPTIONS[index];
+                LinearLayout option = vertical();
+                option.setPadding(dp(14), dp(15), dp(12), dp(14));
+                TextView glyph = label(ICONS[index], 23, ORANGE, Typeface.BOLD);
+                option.addView(glyph);
+                gap(option, 9);
+                TextView effectTitle = label(title, 15, WHITE, Typeface.BOLD);
+                option.addView(effectTitle);
+                gap(option, 3);
+                TextView effectDescription = label(description, 11, MUTED, Typeface.NORMAL);
+                option.addView(effectDescription);
+                option.setContentDescription(getString(R.string.preset_description, title, description));
+                option.setFocusable(true);
+                option.setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_YES);
+                glyph.setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_NO);
+                effectTitle.setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_NO);
+                effectDescription.setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_NO);
+                option.setOnClickListener(v -> {
+                    selectedEffect = effect;
+                    updateSelectedPreset();
+                    saveSettings();
+                });
+                presetCards.add(new PresetCard(effect, option, effectTitle));
+                option.setMinimumHeight(dp(110));
+                LinearLayout.LayoutParams optionLp = new LinearLayout.LayoutParams(0, -1, 1f);
+                if (j % 2 == 1) optionLp.setMarginStart(dp(11));
+                pair.addView(option, optionLp);
+            }
+            parent.addView(pair);
+            gap(parent, 11);
         }
-        activePreset.setText(getString(R.string.current_preset, selectedEffect));
+    }
+
+    private String presetName(String effect) {
+        return AudioProcessor.MAN.equals(effect) ? getString(R.string.preset_men) : effect;
+    }
+
+    private void updateSelectedPreset() {
+        for (PresetCard card : presetCards) {
+            boolean chosen = card.effect().equals(selectedEffect);
+            card.view().setBackground(round(chosen ? Color.rgb(62, 43, 34) : PANEL,
+                    17, chosen ? ORANGE : BORDER));
+            card.title().setTextColor(chosen ? ORANGE : WHITE);
+            card.view().setSelected(chosen);
+        }
+        activePreset.setText(getString(R.string.current_preset, presetName(selectedEffect)));
     }
 
     private interface SliderHandler { void update(int value); }

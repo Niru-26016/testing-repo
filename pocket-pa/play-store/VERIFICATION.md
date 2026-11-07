@@ -1,8 +1,18 @@
-# Instant Mic 2.3.0 verification
+# Instant Mic 1.0 verification
 
-Release candidate for package `com.niru.pocketpa`, version code 5. Android 8.0 minimum, Android 16 target. Verify the upload certificate and version-code availability in Play Console before uploading.
+Release candidate for package `com.niru.pocketpa`, public version 1.0 and Android version code 6. Android 8.0 minimum, Android 16 target. Verify the upload certificate and version-code availability in Play Console before uploading.
 
-## Build and package verification
+## Version 1.0 regression checklist
+
+Built the test APK and unsigned release AAB. Package checks confirmed version code 6, release version 1.0, the expected application IDs and the APK signature. The AAB validated with bundletool and requires the developer’s upload signature. Further functional and latency testing was skipped at the owner’s request. The voice panel screenshot was captured on Android 16.
+
+- Open the voice panel on a fresh install. Check that Clean, Men, Robot and Helium appear in that order, with Clean selected. Tap **Show more options** and check that all 14 other presets are available.
+- Select a preset from the expanded panel and collapse it. Check that the active preset label remains accurate, then reopen the panel and check that the selection is still highlighted. Choose Men and check that it uses the existing Man preset.
+- Check that the noise gate starts on for fresh installs and that saved on/off choices carry over when updating. Compare end-to-end delay on physical devices. Version 1.0 uses approximately 5 ms PCM chunks, shorter I/O waits and requests Android low-latency playback. The audio route and accessory still affect delay. [Android AudioTrack latency guidance](https://developer.android.com/reference/android/media/AudioTrack#PERFORMANCE_MODE_LOW_LATENCY)
+
+## Previous candidate build and package verification
+
+The following results were recorded on version 2.3.0, version code 5, before the 1.0 voice panel update.
 
 - Built with JDK 17, Gradle 8.14.6 and Android Gradle Plugin 8.13.2. Both debug and release unit test runs passed all five tests, covering all 18 presets at 16, 44.1 and 48 kHz, silence, gain and clipping, noise-gate behavior, echo history and invalid inputs. Debug and release Android lint both reported no issues.
 - Verified the installable test APK signature and checked APK alignment. Its package is `com.niru.pocketpa.debug`. The older public GitHub 2.2 debug APK used a different test certificate. Uninstall that build first if Android reports an incompatible update. Uninstalling removes its preferences.
@@ -15,7 +25,7 @@ Run the same build and tests from `pocket-pa/`.
 ./gradlew :app:testDebugUnitTest :app:testReleaseUnitTest :app:lintDebug :app:lintRelease :app:assembleDebug :app:bundleRelease
 ```
 
-## Emulator verification
+## Previous candidate emulator verification
 
 | Check | Android 13 (API 33), test APK | Android 16 (API 36), APK from the AAB |
 |---|---|---|
@@ -30,7 +40,7 @@ Run the same build and tests from `pocket-pa/`.
 
 On Android 13, explicitly denying notifications still allowed the mic session. Android’s Active apps control stopped the service. The Android microphone privacy toggle also stopped an active session, and two subsequent start/stop cycles succeeded.
 
-The tests observed the Android audio route, foreground service, notification and app state. They did not measure acoustic playback quality or accessory latency. The listing screenshots are actual captures from the Android 16 emulator. Android 14 and 15 were reviewed against the platform rules but were not run separately.
+The tests observed the Android audio route, foreground service, notification and app state. They did not measure acoustic playback quality or accessory latency. Android 14 and 15 were reviewed against the platform rules but were not run separately.
 
 ## Physical hardware matrix
 

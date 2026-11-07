@@ -8,6 +8,7 @@
 | Default language | English (United States), `en-US` |
 | App type and suggested category | App, Music & Audio |
 | Package | `com.niru.pocketpa` |
+| Release version | 1.0, version code 6 |
 | Support email | Provide a monitored address you own in Store settings |
 
 The title is 29 of 30 characters. The short description is 74 of 80. [Store listing limits](https://support.google.com/googleplay/android-developer/answer/9859152), [Categories and tags](https://support.google.com/googleplay/android-developer/answer/9859673)
@@ -22,8 +23,8 @@ Use your Android phone as a live microphone for a compatible Bluetooth speaker, 
 
 - Send live microphone audio through a compatible media output.
 - Start and stop from the app. With notifications allowed, you can also stop from the live microphone notification.
-- Check the input meter and adjust mic gain, output level and the noise gate.
-- Keep your natural sound with Clean or choose from 18 presets, including Robot, Helium and Radio.
+- Check the input meter and adjust mic gain, output level and the noise gate, which starts on for fresh installs.
+- Choose Clean, Men, Robot or Helium from the voice panel. Tap Show more options for 14 more presets.
 - Try optional echo reduction on supported phones.
 - Use Instant Mic offline, with no account or ads. The app does not save audio recordings.
 
@@ -38,15 +39,15 @@ Bluetooth playback delay and compatibility vary by phone and accessory. Echo red
 | Phone screenshot 1 | `01-phone-home.png` | Instant Mic home screen with the Start microphone button |
 | Phone screenshot 2 | `02-phone-output.png` | Audio output picker showing the Bluetooth preference and Android media output options |
 | Phone screenshot 3 | `03-phone-live.png` | Active microphone session using the emulator’s phone speaker route |
-| Phone screenshot 4 | `04-phone-effects.png` | Voice effects grid with the optional Robot preset selected |
+| Phone screenshot 4 | `04-phone-effects.png` | Voice panel with Clean, Men, Robot, Helium and the Show more options button |
 
-The supplied phone screenshots are 1,080 × 1,920 RGB PNG captures of the app running on the Android 16 emulator. Play asks for at least two screenshots across device types and recommends at least four 1,080 × 1,920 portrait or 1,920 × 1,080 landscape images for eligibility on some recommendation surfaces. Check the device-specific slots in Console before submitting. [Play preview asset requirements](https://support.google.com/googleplay/android-developer/answer/9866151)
+The supplied phone screenshots are 1,080 × 1,920 RGB PNG captures from an Android 16 emulator. The voice panel shows version 1.0. The home, picker and live screenshots show screens that carry over from the previous candidate. Play asks for at least two screenshots across device types and recommends at least four 1,080 × 1,920 portrait or 1,920 × 1,080 landscape images for eligibility on some recommendation surfaces. Check the device-specific slots in Console before submitting. [Play preview asset requirements](https://support.google.com/googleplay/android-developer/answer/9866151)
 
 ## Release notes
 
 ```text
 <en-US>
-Instant Mic now puts live phone-to-speaker audio first. Choose an audio output, see when the mic is live, and stop it from the app or notification. This release keeps all 18 voice presets, gain and gate controls, and optional echo reduction on supported devices.
+Choose an audio output, go live and stop from the app or notification. Clean, Men, Robot and Helium are up front, with 14 more under Show more options. The noise gate is on by default for fresh installs. The app uses shorter audio chunks and requests Android’s low-latency output path.
 </en-US>
 ```
 

@@ -42,6 +42,8 @@ public final class MicService extends Service {
     private static final int PCM = AudioFormat.ENCODING_PCM_16BIT;
     private static final int INPUT = AudioFormat.CHANNEL_IN_MONO;
     private static final int OUTPUT = AudioFormat.CHANNEL_OUT_MONO;
+    private static final int CHUNK_MS = 5;
+    private static final int IO_RETRY_MS = 2;
 
     enum State { IDLE, STARTING, LIVE, STOPPING }
     record Settings(float input, float output, String effect, boolean gate, int sensitivity,
@@ -53,7 +55,7 @@ public final class MicService extends Service {
     static String activeOutput;
     static volatile float audioLevel;
     private static MicService owner;
-    private static volatile Settings settings = new Settings(1f, 1f, AudioProcessor.CLEAN, false, 55, true);
+    private static volatile Settings settings = new Settings(1f, 1f, AudioProcessor.CLEAN, true, 55, true);
 
     private final Handler main = new Handler(Looper.getMainLooper());
     private Session session;
@@ -293,6 +295,7 @@ public final class MicService extends Service {
                         .setAudioFormat(format(rate, OUTPUT))
                         .setTransferMode(AudioTrack.MODE_STREAM)
                         .setBufferSizeInBytes(AudioTrack.getMinBufferSize(rate, OUTPUT, PCM))
+                        .setPerformanceMode(AudioTrack.PERFORMANCE_MODE_LOW_LATENCY)
                         .build();
                 if (speaker.getState() != AudioTrack.STATE_INITIALIZED) {
                     throw new StreamFailure(R.string.error_audio_setup);
@@ -301,7 +304,8 @@ public final class MicService extends Service {
                     throw new StreamFailure(R.string.error_output_unavailable);
                 }
 
-                short[] samples = new short[rate / 100]; // 10 ms. Bluetooth codecs can buffer additional audio.
+                // Keep app-side chunks short. Bluetooth may buffer additional audio.
+                short[] samples = new short[rate * CHUNK_MS / 1000];
                 speaker.play();
                 List<AudioDeviceInfo> initialRoute = waitForOutput(speaker, preferred, samples);
                 String output = describeRoute(initialRoute);
@@ -352,7 +356,7 @@ public final class MicService extends Service {
                     if (count < 0) throw new StreamFailure(R.string.error_microphone_busy);
                     if (count == 0) {
                         checkOutput(speaker, initialRoute);
-                        Thread.sleep(4);
+                        Thread.sleep(IO_RETRY_MS);
                         continue;
                     }
                     updateLevel(samples, count);
@@ -364,7 +368,7 @@ public final class MicService extends Service {
                         checkOutput(speaker, initialRoute);
                         int result = speaker.write(samples, written, count - written, AudioTrack.WRITE_NON_BLOCKING);
                         if (result < 0) throw new StreamFailure(R.string.error_output_lost);
-                        if (result == 0) Thread.sleep(4);
+                        if (result == 0) Thread.sleep(IO_RETRY_MS);
                         written += result;
                     }
                 }
@@ -402,14 +406,17 @@ public final class MicService extends Service {
                     return routed;
                 }
                 if (speaker.write(silence, 0, silence.length, AudioTrack.WRITE_NON_BLOCKING) < 0) break;
-                Thread.sleep(10);
+                Thread.sleep(CHUNK_MS);
             }
             throw new StreamFailure(R.string.error_output_unavailable);
         }
     }
 
     private static int chooseSampleRate() throws StreamFailure {
-        for (int rate : new int[]{48000, 44100}) {
+        int nativeRate = AudioTrack.getNativeOutputSampleRate(AudioManager.STREAM_MUSIC);
+        int first = nativeRate == 44100 ? 44100 : 48000;
+        int second = first == 44100 ? 48000 : 44100;
+        for (int rate : new int[]{first, second}) {
             if (AudioRecord.getMinBufferSize(rate, INPUT, PCM) > 0
                     && AudioTrack.getMinBufferSize(rate, OUTPUT, PCM) > 0) return rate;
         }
