@@ -22,6 +22,6 @@ Install JDK 17 and Android SDK Platform 36. Point `ANDROID_HOME` at the SDK or o
 ./gradlew :app:testDebugUnitTest :app:lint :app:assembleDebug :app:bundleRelease
 ```
 
-The app supports Android 8.0+ (API 26), targets Android 16 (API 36), and uses release application ID `com.niru.pocketpa`. Public version 1.0 uses Android version code 7 so it can update earlier builds signed with the same key. Install `app/build/outputs/apk/debug/app-debug.apk` for device testing. The debug package is `com.niru.pocketpa.debug` and uses a test signing certificate. Android may require uninstalling an older test APK with a different signature, which removes its local settings.
+The app supports Android 8.0+ (API 26), targets Android 16 (API 36), and uses release application ID `com.niru.instantmic`. Public version 1.0 uses Android version code 1 for this package ID. Install `app/build/outputs/apk/debug/app-debug.apk` for device testing. The debug package is `com.niru.instantmic.debug` and uses a test signing certificate. Android may require uninstalling an older test APK with a different package or signature, which removes its local settings.
 
 See the [release checklist and signing instructions](play-store/RELEASE.md), [store listing](play-store/STORE_LISTING.md), and [privacy policy draft](PRIVACY.md). [Verification and hardware test matrix](play-store/VERIFICATION.md) records what was tested and the remaining physical checks.

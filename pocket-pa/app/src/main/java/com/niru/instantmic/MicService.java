@@ -1,4 +1,4 @@
-package com.niru.pocketpa;
+package com.niru.instantmic;
 
 import android.Manifest;
 import android.annotation.SuppressLint;
@@ -36,10 +36,10 @@ import java.util.function.IntFunction;
 
 /** A user-started microphone session. Only its worker creates, uses, or releases audio objects. */
 public final class MicService extends Service {
-    private static final String ACTION_START = "com.niru.pocketpa.START";
-    private static final String ACTION_STOP = "com.niru.pocketpa.STOP";
+    private static final String ACTION_START = "com.niru.instantmic.START";
+    private static final String ACTION_STOP = "com.niru.instantmic.STOP";
     private static final String EXTRA_DEVICE = "device";
-    private static final String CHANNEL = "pocketpa_microphone";
+    private static final String CHANNEL = "instantmic_microphone";
     private static final String TAG = "InstantMic";
     private static final int NOTIFICATION_ID = 101;
     private static final int PCM = AudioFormat.ENCODING_PCM_16BIT;

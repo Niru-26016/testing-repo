@@ -1,5 +1,5 @@
 <resources>
-    <style name="Theme.PocketPA" parent="android:style/Theme.Material.NoActionBar">
+    <style name="Theme.InstantMic" parent="android:style/Theme.Material.NoActionBar">
         <item name="android:fontFamily">sans</item>
         <item name="android:colorAccent">#FF8C42</item>
         <item name="android:statusBarColor">#191B20</item>
@@ -8,4 +8,5 @@
         <item name="android:windowActionModeOverlay">true</item>
         <item name="android:windowBackground">#191B20</item>
     </style>
+    <style name="Theme.PocketPA" parent="Theme.InstantMic" />
 </resources>

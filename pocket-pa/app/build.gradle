@@ -2,25 +2,25 @@ plugins {
     id 'com.android.application'
 }
 
-def uploadFile = System.getenv('POCKETPA_KEYSTORE_FILE')
-def uploadPassword = System.getenv('POCKETPA_KEYSTORE_PASSWORD')
-def uploadAlias = System.getenv('POCKETPA_KEY_ALIAS')
-def uploadKeyPassword = System.getenv('POCKETPA_KEY_PASSWORD')
+def uploadFile = System.getenv('INSTANTMIC_KEYSTORE_FILE') ?: System.getenv('POCKETPA_KEYSTORE_FILE')
+def uploadPassword = System.getenv('INSTANTMIC_KEYSTORE_PASSWORD') ?: System.getenv('POCKETPA_KEYSTORE_PASSWORD')
+def uploadAlias = System.getenv('INSTANTMIC_KEY_ALIAS') ?: System.getenv('POCKETPA_KEY_ALIAS')
+def uploadKeyPassword = System.getenv('INSTANTMIC_KEY_PASSWORD') ?: System.getenv('POCKETPA_KEY_PASSWORD')
 def signingInputs = [uploadFile, uploadPassword, uploadAlias, uploadKeyPassword]
 def hasSigning = signingInputs.every { it }
 if (signingInputs.any { it } && (!hasSigning || !file(uploadFile).isFile())) {
-    throw new GradleException('Provide all four POCKETPA signing variables and a valid keystore file, or leave them all unset for an unsigned bundle.')
+    throw new GradleException('Provide all four signing variables (INSTANTMIC_KEYSTORE_FILE, etc.) and a valid keystore file, or leave them all unset for an unsigned bundle.')
 }
 
 android {
-    namespace = 'com.niru.pocketpa'
+    namespace = 'com.niru.instantmic'
     compileSdk = 36
 
     defaultConfig {
-        applicationId = 'com.niru.pocketpa'
+        applicationId = 'com.niru.instantmic'
         minSdk = 26
         targetSdk = 36
-        versionCode = 7
+        versionCode = 1
         versionName = '1.0'
     }
 

@@ -1,4 +1,4 @@
-package com.niru.pocketpa;
+package com.niru.instantmic;
 
 import android.content.Context;
 import android.media.AudioAttributes;

@@ -1,4 +1,4 @@
-package com.niru.pocketpa;
+package com.niru.instantmic;
 
 import android.Manifest;
 import android.app.Activity;
@@ -103,7 +103,7 @@ public final class MainActivity extends Activity {
 
     @Override public void onCreate(Bundle state) {
         super.onCreate(state);
-        prefs = getSharedPreferences("pocketpa_prefs", MODE_PRIVATE);
+        prefs = getSharedPreferences("instantmic_prefs", MODE_PRIVATE);
         audioManager = getSystemService(AudioManager.class);
         setVolumeControlStream(AudioManager.STREAM_MUSIC);
         if (state != null) {

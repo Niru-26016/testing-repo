@@ -1,4 +1,4 @@
-package com.niru.pocketpa;
+package com.niru.instantmic;
 
 import static org.junit.Assert.assertArrayEquals;
 import static org.junit.Assert.assertEquals;

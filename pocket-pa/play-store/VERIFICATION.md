@@ -1,10 +1,10 @@
 # Instant Mic 1.0 verification
 
-Release candidate for package `com.niru.pocketpa`, public version 1.0 and Android version code 7. Android 8.0 minimum, Android 16 target. Verify the upload certificate and version-code availability in Play Console before uploading.
+Release candidate for package `com.niru.instantmic`, public version 1.0 and Android version code 1. Android 8.0 minimum, Android 16 target. Verify the upload certificate and version-code availability in Play Console before uploading.
 
 ## Version 1.0 regression checklist
 
-Version code 7 verification covers assembly and package metadata. Runtime and latency testing were skipped at the owner’s request. The included screenshots were captured on Android 16 using earlier builds with the same visible flows.
+Version code 1 verification covers assembly and package metadata. Runtime and latency testing were skipped at the owner’s request. The included screenshots were captured on Android 16 using earlier builds with the same visible flows.
 
 - Open the voice panel on a fresh install. Check that Clean, Men, Robot and Helium appear in that order, with Clean selected. Tap **Show more options** and check that all 14 other presets are available.
 - Select a preset from the expanded panel and collapse it. Check that the active preset label remains accurate, then reopen the panel and check that the selection is still highlighted. Choose Men and check that it uses the existing Man preset.
@@ -16,7 +16,7 @@ Version code 7 verification covers assembly and package metadata. Runtime and la
 The following results were recorded on version 2.3.0, version code 5, before the 1.0 voice panel update.
 
 - Built with JDK 17, Gradle 8.14.6 and Android Gradle Plugin 8.13.2. Both debug and release unit test runs passed all five tests, covering all 18 presets at 16, 44.1 and 48 kHz, silence, gain and clipping, noise-gate behavior, echo history and invalid inputs. Debug and release Android lint both reported no issues.
-- Verified the installable test APK signature and checked APK alignment. Its package is `com.niru.pocketpa.debug`. The older public GitHub 2.2 debug APK used a different test certificate. Uninstall that build first if Android reports an incompatible update. Uninstalling removes its preferences.
+- Verified the installable test APK signature and checked APK alignment. Its package is `com.niru.instantmic.debug`. The older public GitHub 2.2 debug APK used a different test certificate. Uninstall that build first if Android reports an incompatible update. Uninstalling removes its preferences.
 - Validated the release AAB with bundletool 1.18.3 and generated a locally test-signed APK from it for Android 16. Checked the final manifest for version 5 (2.3.0), minimum API 26, target API 36 and microphone foreground-service type. It requests microphone and notification permissions plus the required service permissions. It declares no internet, location or Bluetooth runtime permission and ships no native shared libraries.
 - Verified that the delivered AAB is unsigned. Tested the separate signing workflow with a disposable test key. Play upload requires the developer’s upload key.
 

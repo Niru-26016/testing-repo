@@ -1,4 +1,4 @@
-package com.niru.pocketpa;
+package com.niru.instantmic;
 
 /**
  * No-internet PCM16 audio processor. All DSP state is owned by one audio thread.

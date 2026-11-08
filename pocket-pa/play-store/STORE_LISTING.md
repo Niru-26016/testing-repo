@@ -7,8 +7,8 @@
 | Brand tagline | Phone to Speaker |
 | Default language | English (United States), `en-US` |
 | App type and suggested category | App, Music & Audio |
-| Package | `com.niru.pocketpa` |
-| Release version | 1.0, version code 7 |
+| Package | `com.niru.instantmic` |
+| Release version | 1.0, version code 1 |
 | Support email | Provide a monitored address you own in Store settings |
 
 The title is 29 of 30 characters. The short description is 74 of 80. [Store listing limits](https://support.google.com/googleplay/android-developer/answer/9859152), [Categories and tags](https://support.google.com/googleplay/android-developer/answer/9859673)
