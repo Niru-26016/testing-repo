@@ -15,12 +15,15 @@
     <text x="102" y="351" fill="#C0BCBA" font-size="22" font-weight="500">Live mic audio over Bluetooth</text>
   </g>
 
-  <!-- Phone and live level meter -->
+  <!-- The phone's white microphone and orange live level meter -->
   <g>
     <rect x="557" y="145" width="115" height="210" rx="21" fill="#191B20" stroke="#F8F3EC" stroke-width="3.5"/>
     <path d="M605 161h19m-22 177h25" fill="none" stroke="#797981" stroke-width="3.5" stroke-linecap="round"/>
-    <path d="M585 241v18m15-28v38m15-54v70m15-54v38m15-28v18"
-          fill="none" stroke="#FF8C42" stroke-width="5.5" stroke-linecap="round"/>
+    <rect x="606.5" y="196" width="17" height="30" rx="8.5" fill="#F8F3EC"/>
+    <path d="M599 219a16 16 0 0 0 32 0m-16 16v9m-8 0h16"
+          fill="none" stroke="#F8F3EC" stroke-width="4.5" stroke-linecap="round"/>
+    <path d="M591 279v8m12-12v16m12-22v28m12-22v16m12-12v8"
+          fill="none" stroke="#FF8C42" stroke-width="4.5" stroke-linecap="round"/>
   </g>
 
   <!-- The bright route represents the selected audio output. -->

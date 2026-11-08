@@ -16,6 +16,14 @@
     <string name="preset_men">Men</string>
     <string name="presets_show_more">Show more options</string>
     <string name="presets_show_less">Show fewer options</string>
+    <string name="capture_cleanup_subtitle">Noise gate, background noise and speaker echo controls</string>
+    <string name="noise_gate_title">Noise gate</string>
+    <string name="noise_gate_detail">Lowers quiet sounds between phrases</string>
+    <string name="noise_reduction_title">Reduce background noise</string>
+    <string name="noise_reduction_detail">Uses Android noise suppression while you speak</string>
+    <string name="echo_reduction_title">Reduce speaker echo</string>
+    <string name="echo_reduction_detail">Uses Android echo cancellation when the audio route supports it</string>
+    <string name="capture_effect_unavailable">Unavailable on this phone</string>
     <string name="output_heading">Audio output</string>
     <string name="output_active">Playing to %1$s</string>
     <string name="output_auto">Automatic (prefer Bluetooth)</string>

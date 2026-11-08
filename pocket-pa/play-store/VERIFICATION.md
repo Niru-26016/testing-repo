@@ -1,14 +1,15 @@
 # Instant Mic 1.0 verification
 
-Release candidate for package `com.niru.pocketpa`, public version 1.0 and Android version code 6. Android 8.0 minimum, Android 16 target. Verify the upload certificate and version-code availability in Play Console before uploading.
+Release candidate for package `com.niru.pocketpa`, public version 1.0 and Android version code 7. Android 8.0 minimum, Android 16 target. Verify the upload certificate and version-code availability in Play Console before uploading.
 
 ## Version 1.0 regression checklist
 
-Built the test APK and unsigned release AAB. Package checks confirmed version code 6, release version 1.0, the expected application IDs and the APK signature. The AAB validated with bundletool and requires the developer’s upload signature. Further functional and latency testing was skipped at the owner’s request. The voice panel screenshot was captured on Android 16.
+Version code 7 verification covers assembly and package metadata. Runtime and latency testing were skipped at the owner’s request. The included screenshots were captured on Android 16 using earlier builds with the same visible flows.
 
 - Open the voice panel on a fresh install. Check that Clean, Men, Robot and Helium appear in that order, with Clean selected. Tap **Show more options** and check that all 14 other presets are available.
 - Select a preset from the expanded panel and collapse it. Check that the active preset label remains accurate, then reopen the panel and check that the selection is still highlighted. Choose Men and check that it uses the existing Man preset.
-- Check that the noise gate starts on for fresh installs and that saved on/off choices carry over when updating. Compare end-to-end delay on physical devices. Version 1.0 uses approximately 5 ms PCM chunks, shorter I/O waits and requests Android low-latency playback. The audio route and accessory still affect delay. [Android AudioTrack latency guidance](https://developer.android.com/reference/android/media/AudioTrack#PERFORMANCE_MODE_LOW_LATENCY)
+- Check that the noise gate and supported Android noise suppression start on for fresh installs, and that saved on/off choices carry over when updating. Check the independent noise suppression and echo reduction controls. If an enabled effect cannot attach before recording starts, the app retries once after recording starts.
+- Compare end-to-end delay on physical devices. Version code 7 uses approximately 5 ms PCM chunks, a 5 ms gate attack (previously 12 ms) and a fixed 85 Hz filter for rumble. Android 10+ uses voice-performance capture when enabled platform effects do not require the standard microphone path, with a fallback to standard capture. The audio route and accessory still affect delay. [Android AudioTrack latency guidance](https://developer.android.com/reference/android/media/AudioTrack#PERFORMANCE_MODE_LOW_LATENCY)
 
 ## Previous candidate build and package verification
 

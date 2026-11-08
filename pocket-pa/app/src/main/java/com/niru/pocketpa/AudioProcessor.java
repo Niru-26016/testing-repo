@@ -56,7 +56,7 @@ public final class AudioProcessor {
             throw new IllegalArgumentException("Unsupported sample rate");
         }
         rate = sampleRate;
-        gateAttack = 1.0 - Math.exp(-1.0 / (rate * 0.012));
+        gateAttack = 1.0 - Math.exp(-1.0 / (rate * 0.005));
         gateRelease = 1.0 - Math.exp(-1.0 / (rate * 0.090));
         echoBuffer = new float[Math.max(1, (int) (rate * 0.26))];
         caveBuffer = new float[Math.max(1, (int) (rate * 0.77))];

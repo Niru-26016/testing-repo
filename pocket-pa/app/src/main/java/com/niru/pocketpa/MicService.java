@@ -22,6 +22,8 @@ import android.media.AudioRecordingConfiguration;
 import android.media.AudioTrack;
 import android.media.MediaRecorder;
 import android.media.audiofx.AcousticEchoCanceler;
+import android.media.audiofx.AudioEffect;
+import android.media.audiofx.NoiseSuppressor;
 import android.os.Build;
 import android.os.Handler;
 import android.os.IBinder;
@@ -30,6 +32,7 @@ import android.os.Process;
 import android.os.SystemClock;
 import android.util.Log;
 import java.util.List;
+import java.util.function.IntFunction;
 
 /** A user-started microphone session. Only its worker creates, uses, or releases audio objects. */
 public final class MicService extends Service {
@@ -47,7 +50,7 @@ public final class MicService extends Service {
 
     enum State { IDLE, STARTING, LIVE, STOPPING }
     record Settings(float input, float output, String effect, boolean gate, int sensitivity,
-                    boolean echoReduction) { }
+                    boolean echoReduction, boolean noiseReduction) { }
 
     // The activity and service run in the same process. Only the main thread changes session state.
     static State state = State.IDLE;
@@ -55,7 +58,7 @@ public final class MicService extends Service {
     static String activeOutput;
     static volatile float audioLevel;
     private static MicService owner;
-    private static volatile Settings settings = new Settings(1f, 1f, AudioProcessor.CLEAN, true, 55, true);
+    private static volatile Settings settings = new Settings(1f, 1f, AudioProcessor.CLEAN, true, 55, true, true);
 
     private final Handler main = new Handler(Looper.getMainLooper());
     private Session session;
@@ -275,7 +278,8 @@ public final class MicService extends Service {
                     .build();
             AudioTrack speaker = null;
             AudioRecord record = null;
-            AcousticEchoCanceler echoCanceler = null;
+            CaptureEffect echo = new CaptureEffect("Echo cancellation", AcousticEchoCanceler::create);
+            CaptureEffect noise = new CaptureEffect("Noise suppression", NoiseSuppressor::create);
             boolean focusGranted = false;
             int failure = 0;
             try {
@@ -310,30 +314,42 @@ public final class MicService extends Service {
                 List<AudioDeviceInfo> initialRoute = waitForOutput(speaker, preferred, samples);
                 String output = describeRoute(initialRoute);
 
-                record = new AudioRecord.Builder().setAudioSource(MediaRecorder.AudioSource.MIC)
-                        .setAudioFormat(format(rate, INPUT))
-                        .setBufferSizeInBytes(Math.max(2 * AudioRecord.getMinBufferSize(rate, INPUT, PCM),
-                                samples.length * 4))
-                        .build();
-                if (record.getState() != AudioRecord.STATE_INITIALIZED) {
-                    throw new StreamFailure(R.string.error_audio_setup);
+                Settings initial = settings;
+                boolean echoAvailable = AcousticEchoCanceler.isAvailable();
+                boolean noiseAvailable = NoiseSuppressor.isAvailable();
+                boolean echoEnabled = initial.echoReduction();
+                boolean noiseEnabled = initial.noiseReduction();
+                boolean useCaptureEffects = (echoAvailable && echoEnabled) || (noiseAvailable && noiseEnabled);
+                int captureBytes = Math.max(2 * AudioRecord.getMinBufferSize(rate, INPUT, PCM), samples.length * 4);
+                if (stopRequested) return;
+                if (!useCaptureEffects && Build.VERSION.SDK_INT >= 29) {
+                    record = tryLowLatencyMicrophone(rate, captureBytes);
                 }
-                for (AudioDeviceInfo input : audioManager.getDevices(AudioManager.GET_DEVICES_INPUTS)) {
-                    if (input.getType() == AudioDeviceInfo.TYPE_BUILTIN_MIC && record.setPreferredDevice(input)) break;
+                boolean alreadyRecording = record != null;
+                if (!alreadyRecording) {
+                    record = openMicrophone(rate, captureBytes, MediaRecorder.AudioSource.MIC);
+                    if (record.getState() != AudioRecord.STATE_INITIALIZED) {
+                        throw new StreamFailure(R.string.error_audio_setup);
+                    }
+                    preferBuiltInMicrophone(record);
                 }
-                echoCanceler = createEchoCanceler(record);
-                boolean echoEnabled = settings.echoReduction();
-                setEchoReduction(echoCanceler, echoEnabled);
+                int sessionId = record.getAudioSessionId();
+                boolean echoConfigured = echoAvailable && echo.configure(sessionId, echoEnabled);
+                boolean noiseConfigured = noiseAvailable && noise.configure(sessionId, noiseEnabled);
 
                 if (stopRequested) return;
-                record.startRecording();
+                if (!alreadyRecording) record.startRecording();
                 if (record.getRecordingState() != AudioRecord.RECORDSTATE_RECORDING) {
                     throw new StreamFailure(R.string.error_microphone_busy);
                 }
                 checkCapture(record);
+                // Some devices expose capture effects only once the microphone path is active.
+                if (echoAvailable && echoEnabled && !echoConfigured) echo.configure(sessionId, true);
+                if (noiseAvailable && noiseEnabled && !noiseConfigured) noise.configure(sessionId, true);
                 main.post(() -> ready(this, output));
 
                 AudioProcessor processor = new AudioProcessor(rate);
+                InputFilter inputFilter = new InputFilter(rate);
                 long checkInputAt = 0;
                 float appliedVolume = 1f;
                 while (!stopRequested) {
@@ -345,7 +361,11 @@ public final class MicService extends Service {
                     Settings current = settings;
                     if (echoEnabled != current.echoReduction()) {
                         echoEnabled = current.echoReduction();
-                        setEchoReduction(echoCanceler, echoEnabled);
+                        if (echoAvailable) echo.configure(sessionId, echoEnabled);
+                    }
+                    if (noiseEnabled != current.noiseReduction()) {
+                        noiseEnabled = current.noiseReduction();
+                        if (noiseAvailable) noise.configure(sessionId, noiseEnabled);
                     }
                     long now = SystemClock.elapsedRealtime();
                     if (now >= checkInputAt) {
@@ -359,7 +379,7 @@ public final class MicService extends Service {
                         Thread.sleep(IO_RETRY_MS);
                         continue;
                     }
-                    updateLevel(samples, count);
+                    inputFilter.cleanAndMeasure(samples, count);
                     processor.process(samples, count, current.input(), current.output(),
                             current.effect(), current.gate(), current.sensitivity());
                     // Check before each write, including when Android temporarily stops exposing a route.
@@ -383,7 +403,7 @@ public final class MicService extends Service {
                 failure = R.string.error_audio_setup;
                 Log.w(TAG, "Live audio stopped", e);
             } finally {
-                release(speaker, record, echoCanceler);
+                release(speaker, record, echo, noise);
                 if (focusGranted) {
                     try {
                         audioManager.abandonAudioFocusRequest(focus);
@@ -393,6 +413,34 @@ public final class MicService extends Service {
                 }
                 int result = failure;
                 main.post(() -> finished(this, result));
+            }
+        }
+
+        private AudioRecord tryLowLatencyMicrophone(int rate, int bytes) {
+            AudioRecord candidate = null;
+            boolean accepted = false;
+            try {
+                candidate = openMicrophone(rate, bytes, MediaRecorder.AudioSource.VOICE_PERFORMANCE);
+                if (candidate.getState() == AudioRecord.STATE_INITIALIZED) {
+                    preferBuiltInMicrophone(candidate);
+                    candidate.startRecording();
+                    if (candidate.getRecordingState() == AudioRecord.RECORDSTATE_RECORDING) {
+                        checkCapture(candidate);
+                        accepted = true;
+                        return candidate;
+                    }
+                }
+            } catch (IllegalArgumentException | IllegalStateException | UnsupportedOperationException | StreamFailure e) {
+                Log.w(TAG, "Low-latency microphone input unavailable, using standard input", e);
+            } finally {
+                if (!accepted) releaseMicrophone(candidate);
+            }
+            return null;
+        }
+
+        private void preferBuiltInMicrophone(AudioRecord record) {
+            for (AudioDeviceInfo input : audioManager.getDevices(AudioManager.GET_DEVICES_INPUTS)) {
+                if (input.getType() == AudioDeviceInfo.TYPE_BUILTIN_MIC && record.setPreferredDevice(input)) return;
             }
         }
 
@@ -462,47 +510,89 @@ public final class MicService extends Service {
         }
     }
 
-    private static AcousticEchoCanceler createEchoCanceler(AudioRecord record) {
-        try {
-            if (AcousticEchoCanceler.isAvailable()) return AcousticEchoCanceler.create(record.getAudioSessionId());
-        } catch (RuntimeException e) {
-            Log.w(TAG, "AEC could not attach to the microphone", e);
-        }
-        return null;
+    @SuppressLint("MissingPermission") // The session verifies RECORD_AUDIO before opening capture.
+    private static AudioRecord openMicrophone(int rate, int bytes, int source) {
+        return new AudioRecord.Builder()
+                .setAudioSource(source)
+                .setAudioFormat(format(rate, INPUT))
+                .setBufferSizeInBytes(bytes)
+                .build();
     }
 
-    private static void setEchoReduction(AcousticEchoCanceler aec, boolean enabled) {
-        if (aec == null) return;
-        try {
-            if (aec.setEnabled(enabled) != AcousticEchoCanceler.SUCCESS) {
-                Log.w(TAG, "AEC is unavailable on this audio path");
+    private static final class CaptureEffect {
+        private final String name;
+        private final IntFunction<? extends AudioEffect> create;
+        private AudioEffect effect;
+
+        CaptureEffect(String name, IntFunction<? extends AudioEffect> create) {
+            this.name = name;
+            this.create = create;
+        }
+
+        boolean configure(int sessionId, boolean enabled) {
+            try {
+                if (effect == null) effect = create.apply(sessionId);
+                return effect != null && (effect.getEnabled() == enabled
+                        || effect.setEnabled(enabled) == AudioEffect.SUCCESS);
+            } catch (RuntimeException e) {
+                Log.w(TAG, name + " could not be configured", e);
+                return false;
             }
-        } catch (RuntimeException e) {
-            Log.w(TAG, "AEC could not be configured", e);
+        }
+
+        void release() {
+            if (effect == null) return;
+            try {
+                effect.release();
+            } catch (RuntimeException e) {
+                Log.w(TAG, name + " release", e);
+            }
         }
     }
 
-    private static void updateLevel(short[] samples, int count) {
-        double sum = 0.0;
-        for (int i = 0; i < count; i++) {
-            double value = samples[i] / 32768.0;
-            sum += value * value;
+    private static final class InputFilter {
+        private final double coefficient;
+        private double previousInput;
+        private double previousOutput;
+
+        InputFilter(int rate) {
+            // Remove low-frequency handling and wind rumble without buffering speech.
+            coefficient = Math.exp(-2.0 * Math.PI * 85.0 / rate);
         }
-        float measured = (float) Math.min(1.0, Math.sqrt(sum / count) * 3.0);
-        audioLevel = Math.max(measured, audioLevel * 0.90f);
+
+        void cleanAndMeasure(short[] samples, int count) {
+            double sum = 0.0;
+            for (int i = 0; i < count; i++) {
+                double input = samples[i];
+                previousOutput = coefficient * (previousOutput + input - previousInput);
+                previousInput = input;
+                samples[i] = (short) Math.round(Math.max(Short.MIN_VALUE, Math.min(Short.MAX_VALUE, previousOutput)));
+                double value = samples[i] / 32768.0;
+                sum += value * value;
+            }
+            float measured = (float) Math.min(1.0, Math.sqrt(sum / count) * 3.0);
+            audioLevel = Math.max(measured, audioLevel * 0.90f);
+        }
     }
 
-    private static void release(AudioTrack speaker, AudioRecord record, AcousticEchoCanceler aec) {
+    private static void release(AudioTrack speaker, AudioRecord record, CaptureEffect echo, CaptureEffect noise) {
         if (speaker != null) {
             // Drop queued audio rather than draining to a newly selected route.
             try { speaker.pause(); speaker.flush(); } catch (RuntimeException e) { Log.w(TAG, "Output cleanup", e); }
             try { speaker.release(); } catch (RuntimeException e) { Log.w(TAG, "Output release", e); }
         }
-        if (aec != null) {
-            try { aec.release(); } catch (RuntimeException e) { Log.w(TAG, "AEC release", e); }
-        }
+        echo.release();
+        noise.release();
+        releaseMicrophone(record);
+    }
+
+    private static void releaseMicrophone(AudioRecord record) {
         if (record != null) {
-            try { record.stop(); } catch (RuntimeException e) { Log.w(TAG, "Microphone cleanup", e); }
+            try {
+                if (record.getRecordingState() == AudioRecord.RECORDSTATE_RECORDING) record.stop();
+            } catch (RuntimeException e) {
+                Log.w(TAG, "Microphone cleanup", e);
+            }
             try { record.release(); } catch (RuntimeException e) { Log.w(TAG, "Microphone release", e); }
         }
     }

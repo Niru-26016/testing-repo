@@ -2,11 +2,11 @@
   <title id="title">Instant Mic microphone and connection ring</title>
   <path fill="#191B20" d="M0 0h80v80H0z"/>
   <g transform="translate(-14 -14)" fill="#FF8C42">
-    <g fill="none" stroke="#FF8C42" stroke-width="3.6" stroke-linecap="round">
-      <path d="M79.75 44.58A27.4 27.4 0 1 1 64.99 28.90"/>
-      <path d="M42 53.8a12 12 0 0 0 24 0M54 65.8v6M48.2 71.8h11.6"/>
-    </g>
+    <path d="M79.75 44.58A27.4 27.4 0 1 1 64.99 28.90"
+          fill="none" stroke="#FF8C42" stroke-width="3.6" stroke-linecap="round"/>
     <circle cx="74" cy="34.7" r="3.2"/>
-    <rect x="47.6" y="36.8" width="12.8" height="22.4" rx="6.4"/>
+    <rect x="47.6" y="36.8" width="12.8" height="22.4" rx="6.4" fill="#F8F3EC"/>
+    <path d="M42 53.8a12 12 0 0 0 24 0M54 65.8v6M48.2 71.8h11.6"
+          fill="none" stroke="#F8F3EC" stroke-width="3.6" stroke-linecap="round"/>
   </g>
 </svg>

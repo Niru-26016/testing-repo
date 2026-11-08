@@ -15,6 +15,8 @@ import android.graphics.drawable.RippleDrawable;
 import android.media.AudioDeviceCallback;
 import android.media.AudioDeviceInfo;
 import android.media.AudioManager;
+import android.media.audiofx.AcousticEchoCanceler;
+import android.media.audiofx.NoiseSuppressor;
 import android.net.Uri;
 import android.os.Build;
 import android.os.Bundle;
@@ -25,6 +27,7 @@ import android.view.Gravity;
 import android.view.View;
 import android.view.WindowInsets;
 import android.widget.Button;
+import android.widget.CompoundButton;
 import android.widget.ImageView;
 import android.widget.LinearLayout;
 import android.widget.ScrollView;
@@ -93,6 +96,7 @@ public final class MainActivity extends Activity {
     private String selectedEffect;
     private boolean presetsExpanded;
     private boolean noiseGate;
+    private boolean reduceNoise;
     private boolean reduceEcho;
     private MicService.State lastState;
     private int lastPeak = -1;
@@ -112,6 +116,7 @@ public final class MainActivity extends Activity {
         sensitivity = prefs.getInt("sensitivity", 55);
         selectedEffect = prefs.getString("effect", AudioProcessor.CLEAN);
         noiseGate = prefs.getBoolean("gate", true);
+        reduceNoise = prefs.getBoolean("reduce_noise", true);
         reduceEcho = prefs.getBoolean("reduce_echo", true);
         micPercent = Math.max(0, Math.min(200, micPercent));
         outputPercent = Math.max(0, Math.min(150, outputPercent));
@@ -274,49 +279,23 @@ public final class MainActivity extends Activity {
         });
         gap(page, 24);
 
-        section(page, "ECHO & NOISE", "Reduce unwanted sound", "Noise gate and optional Android echo cancellation");
+        section(page, "ECHO & NOISE", "Reduce unwanted sound", getString(R.string.capture_cleanup_subtitle));
         gap(page, 15);
         LinearLayout feedback = card(page);
-        LinearLayout switchRow = horizontal(Gravity.CENTER_VERTICAL);
-        LinearLayout switchCopy = vertical();
-        switchCopy.addView(label("Noise gate", 16, WHITE, Typeface.BOLD));
-        gap(switchCopy, 3);
-        switchCopy.addView(label("Suppress quiet background noise", 12, MUTED, Typeface.NORMAL));
-        switchRow.addView(switchCopy, new LinearLayout.LayoutParams(0, -2, 1));
-        Switch gateSwitch = new Switch(this);
-        gateSwitch.setChecked(noiseGate);
-        gateSwitch.setContentDescription("Noise gate");
-        gateSwitch.setMinWidth(dp(48));
-        gateSwitch.setMinHeight(dp(48));
-        gateSwitch.setThumbTintList(new ColorStateList(new int[][]{new int[]{android.R.attr.state_checked}, new int[]{}}, new int[]{ORANGE, MUTED}));
-        switchRow.addView(gateSwitch);
-        feedback.addView(switchRow);
-        gateSwitch.setOnCheckedChangeListener((compound, checked) -> {
+        addAudioSwitch(feedback, R.string.noise_gate_title, R.string.noise_gate_detail,
+                true, noiseGate, (compound, checked) -> {
             noiseGate = checked;
             saveSettings();
         });
         gap(feedback, 18);
-        LinearLayout echoRow = horizontal(Gravity.CENTER_VERTICAL);
-        LinearLayout echoCopy = vertical();
-        echoCopy.addView(label("Reduce speaker echo", 16, WHITE, Typeface.BOLD));
-        gap(echoCopy, 3);
-        boolean supportsAec = android.media.audiofx.AcousticEchoCanceler.isAvailable();
-        echoCopy.addView(label(supportsAec
-                        ? "Android echo canceller (device-dependent)"
-                        : "Not available on this phone", 12, MUTED, Typeface.NORMAL));
-        echoRow.addView(echoCopy, new LinearLayout.LayoutParams(0, -2, 1));
-        Switch echoSwitch = new Switch(this);
-        echoSwitch.setEnabled(supportsAec);
-        echoSwitch.setContentDescription("Reduce speaker echo");
-        echoSwitch.setMinWidth(dp(48));
-        echoSwitch.setMinHeight(dp(48));
-        echoSwitch.setChecked(supportsAec && reduceEcho);
-        echoSwitch.setThumbTintList(new ColorStateList(
-                new int[][]{new int[]{android.R.attr.state_checked}, new int[]{}},
-                new int[]{ORANGE, MUTED}));
-        echoRow.addView(echoSwitch);
-        feedback.addView(echoRow);
-        echoSwitch.setOnCheckedChangeListener((compound, checked) -> {
+        addAudioSwitch(feedback, R.string.noise_reduction_title, R.string.noise_reduction_detail,
+                NoiseSuppressor.isAvailable(), reduceNoise, (compound, checked) -> {
+            reduceNoise = checked;
+            saveSettings();
+        });
+        gap(feedback, 18);
+        addAudioSwitch(feedback, R.string.echo_reduction_title, R.string.echo_reduction_detail,
+                AcousticEchoCanceler.isAvailable(), reduceEcho, (compound, checked) -> {
             reduceEcho = checked;
             saveSettings();
         });
@@ -462,13 +441,14 @@ public final class MainActivity extends Activity {
 
     private void updateServiceSettings() {
         MicService.updateSettings(new MicService.Settings(micPercent / 100f, outputPercent / 100f,
-                selectedEffect, noiseGate, sensitivity, reduceEcho));
+                selectedEffect, noiseGate, sensitivity, reduceEcho, reduceNoise));
     }
 
     private void saveSettings() {
         prefs.edit().putInt("mic", micPercent).putInt("out", outputPercent)
                 .putString("effect", selectedEffect).putBoolean("gate", noiseGate)
                 .putBoolean("reduce_echo", reduceEcho)
+                .putBoolean("reduce_noise", reduceNoise)
                 .putInt("sensitivity", sensitivity).apply();
         updateServiceSettings();
     }
@@ -604,6 +584,31 @@ public final class MainActivity extends Activity {
             card.view().setSelected(chosen);
         }
         activePreset.setText(getString(R.string.current_preset, presetName(selectedEffect)));
+    }
+
+    private void addAudioSwitch(LinearLayout parent, int title, int detail, boolean available,
+                                boolean enabled, CompoundButton.OnCheckedChangeListener listener) {
+        LinearLayout row = horizontal(Gravity.CENTER_VERTICAL);
+        LinearLayout copy = vertical();
+        String name = getString(title);
+        copy.addView(label(name, 16, WHITE, Typeface.BOLD));
+        gap(copy, 3);
+        copy.addView(label(getString(available ? detail : R.string.capture_effect_unavailable),
+                12, MUTED, Typeface.NORMAL));
+        row.addView(copy, new LinearLayout.LayoutParams(0, -2, 1));
+
+        Switch control = new Switch(this);
+        control.setEnabled(available);
+        control.setChecked(available && enabled);
+        control.setContentDescription(name);
+        control.setMinWidth(dp(48));
+        control.setMinHeight(dp(48));
+        control.setThumbTintList(new ColorStateList(
+                new int[][]{new int[]{android.R.attr.state_checked}, new int[]{}},
+                new int[]{ORANGE, MUTED}));
+        control.setOnCheckedChangeListener(listener);
+        row.addView(control);
+        parent.addView(row);
     }
 
     private interface SliderHandler { void update(int value); }
