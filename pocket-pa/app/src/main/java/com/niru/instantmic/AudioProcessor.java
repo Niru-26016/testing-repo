@@ -49,6 +49,7 @@ public final class AudioProcessor {
     private final double gateAttack;
     private final double gateRelease;
     private double gateEnvelope = 1.0;
+    private double noiseFloor = 0.008;
     private long randomState = 0x12345678L;
 
     public AudioProcessor(int sampleRate) {
@@ -57,7 +58,7 @@ public final class AudioProcessor {
         }
         rate = sampleRate;
         gateAttack = 1.0 - Math.exp(-1.0 / (rate * 0.005));
-        gateRelease = 1.0 - Math.exp(-1.0 / (rate * 0.090));
+        gateRelease = 1.0 - Math.exp(-1.0 / (rate * 0.120));
         echoBuffer = new float[Math.max(1, (int) (rate * 0.26))];
         caveBuffer = new float[Math.max(1, (int) (rate * 0.77))];
         grainLength = Math.max(128, (int) (rate * 0.045));
@@ -84,8 +85,31 @@ public final class AudioProcessor {
             sum += x * x;
         }
         final double rms = Math.sqrt(sum / count);
-        final double threshold = 0.006 + (100 - sensitivity) * 0.00034;
-        final double target = !noiseGate || rms >= threshold ? 1.0 : 0.0;
+
+        // Adaptive noise floor tracking (fan hum, room AC, outdoor background chatter)
+        if (rms < noiseFloor) {
+            noiseFloor += (rms - noiseFloor) * 0.08;
+        } else {
+            noiseFloor += (rms - noiseFloor) * 0.002;
+        }
+
+        // Base threshold mapped from sensitivity slider
+        final double baseThreshold = 0.008 + (100 - sensitivity) * 0.00045;
+        // Dynamically float the gate threshold above the ambient noise floor
+        final double threshold = Math.max(baseThreshold, noiseFloor * 2.2 + 0.006);
+
+        final double target;
+        if (!noiseGate) {
+            target = 1.0;
+        } else if (rms >= threshold) {
+            target = 1.0;
+        } else if (rms >= threshold * 0.5) {
+            // Soft-knee downward expansion: smoothly attenuate quieter background sounds
+            double ratio = (rms - threshold * 0.5) / (threshold * 0.5);
+            target = ratio * ratio;
+        } else {
+            target = 0.0;
+        }
 
         for (int i = 0; i < count; i++) {
             double x = (pcm[i] / 32768.0) * inputGain;

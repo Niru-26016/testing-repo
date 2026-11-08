@@ -322,11 +322,34 @@ public final class MicService extends Service {
                 boolean useCaptureEffects = (echoAvailable && echoEnabled) || (noiseAvailable && noiseEnabled);
                 int captureBytes = Math.max(2 * AudioRecord.getMinBufferSize(rate, INPUT, PCM), samples.length * 4);
                 if (stopRequested) return;
-                if (!useCaptureEffects && Build.VERSION.SDK_INT >= 29) {
-                    record = tryLowLatencyMicrophone(rate, captureBytes);
+                boolean alreadyRecording = false;
+                if (useCaptureEffects) {
+                    try {
+                        record = openMicrophone(rate, captureBytes, MediaRecorder.AudioSource.VOICE_COMMUNICATION);
+                        if (record.getState() == AudioRecord.STATE_INITIALIZED) {
+                            preferBuiltInMicrophone(record);
+                            record.startRecording();
+                            if (record.getRecordingState() == AudioRecord.RECORDSTATE_RECORDING) {
+                                checkCapture(record);
+                                alreadyRecording = true;
+                            } else {
+                                releaseMicrophone(record);
+                                record = null;
+                            }
+                        } else {
+                            releaseMicrophone(record);
+                            record = null;
+                        }
+                    } catch (RuntimeException | StreamFailure e) {
+                        Log.w(TAG, "Voice communication source unavailable, falling back", e);
+                        record = null;
+                    }
                 }
-                boolean alreadyRecording = record != null;
-                if (!alreadyRecording) {
+                if (record == null && !useCaptureEffects && Build.VERSION.SDK_INT >= 29) {
+                    record = tryLowLatencyMicrophone(rate, captureBytes);
+                    alreadyRecording = record != null;
+                }
+                if (record == null) {
                     record = openMicrophone(rate, captureBytes, MediaRecorder.AudioSource.MIC);
                     if (record.getState() != AudioRecord.STATE_INITIALIZED) {
                         throw new StreamFailure(R.string.error_audio_setup);
@@ -561,22 +584,37 @@ public final class MicService extends Service {
     }
 
     private static final class InputFilter {
-        private final double coefficient;
-        private double previousInput;
-        private double previousOutput;
+        private final double hpCoeff;
+        private final double lpCoeff;
+        private double hpPrevIn1, hpPrevOut1;
+        private double hpPrevIn2, hpPrevOut2;
+        private double lpPrevOut;
 
         InputFilter(int rate) {
-            // Remove low-frequency handling and wind rumble without buffering speech.
-            coefficient = Math.exp(-2.0 * Math.PI * 85.0 / rate);
+            // 2-stage high-pass filter at 125 Hz to eliminate fan motor hum, AC vibration and desk rumble
+            hpCoeff = Math.exp(-2.0 * Math.PI * 125.0 / rate);
+            // Low-pass roll-off at 7500 Hz to cut fan air hiss while keeping speech crisp
+            lpCoeff = (2.0 * Math.PI * 7500.0 / rate) / (1.0 + 2.0 * Math.PI * 7500.0 / rate);
         }
 
         void cleanAndMeasure(short[] samples, int count) {
             double sum = 0.0;
             for (int i = 0; i < count; i++) {
                 double input = samples[i];
-                previousOutput = coefficient * (previousOutput + input - previousInput);
-                previousInput = input;
-                samples[i] = (short) Math.round(Math.max(Short.MIN_VALUE, Math.min(Short.MAX_VALUE, previousOutput)));
+                // Stage 1 high-pass
+                double hp1 = hpCoeff * (hpPrevOut1 + input - hpPrevIn1);
+                hpPrevIn1 = input;
+                hpPrevOut1 = hp1;
+
+                // Stage 2 steep high-pass (-12 dB/oct below 125 Hz)
+                double hp2 = hpCoeff * (hpPrevOut2 + hp1 - hpPrevIn2);
+                hpPrevIn2 = hp1;
+                hpPrevOut2 = hp2;
+
+                // Stage 3 gentle low-pass above 7500 Hz
+                lpPrevOut += lpCoeff * (hp2 - lpPrevOut);
+
+                samples[i] = (short) Math.round(Math.max(Short.MIN_VALUE, Math.min(Short.MAX_VALUE, lpPrevOut)));
                 double value = samples[i] / 32768.0;
                 sum += value * value;
             }
