@@ -332,21 +332,22 @@ public final class MainActivity extends Activity {
     private void chooseOutput() {
         refreshOutputs();
         List<AudioDeviceInfo> choices = bluetoothOutputs;
-        CharSequence[] names = new CharSequence[choices.size() + 2];
+        if (choices.isEmpty()) {
+            showNoBluetoothDialog();
+            return;
+        }
+        CharSequence[] names = new CharSequence[choices.size() + 1];
         names[0] = getString(R.string.output_auto);
-        names[1] = getString(R.string.output_system);
-        int checked = outputSelection == MediaOutput.AUTOMATIC ? 0
-                : outputSelection == MediaOutput.SYSTEM ? 1 : -1;
+        int checked = outputSelection == MediaOutput.AUTOMATIC ? 0 : -1;
         for (int i = 0; i < choices.size(); i++) {
             AudioDeviceInfo device = choices.get(i);
-            names[i + 2] = MediaOutput.label(this, device);
-            if (device.getId() == outputSelection) checked = i + 2;
+            names[i + 1] = MediaOutput.label(this, device);
+            if (device.getId() == outputSelection) checked = i + 1;
         }
         new AlertDialog.Builder(this)
                 .setTitle(R.string.choose_output)
                 .setSingleChoiceItems(names, checked, (dialog, item) -> {
-                    outputSelection = item == 0 ? MediaOutput.AUTOMATIC
-                            : item == 1 ? MediaOutput.SYSTEM : choices.get(item - 2).getId();
+                    outputSelection = item == 0 ? MediaOutput.AUTOMATIC : choices.get(item - 1).getId();
                     MicService.error = 0;
                     refreshOutputs();
                     dialog.dismiss();
@@ -365,6 +366,11 @@ public final class MainActivity extends Activity {
             MicService.stop();
             refreshStatus();
         } else if (MicService.state == MicService.State.IDLE) {
+            refreshOutputs();
+            if (preferredOutput == null) {
+                showNoBluetoothDialog();
+                return;
+            }
             if (checkSelfPermission(Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) {
                 requestPermissions(new String[]{Manifest.permission.RECORD_AUDIO}, REQUEST_AUDIO);
             } else {
@@ -378,10 +384,24 @@ public final class MainActivity extends Activity {
         if (!resumed || !startAfterPermission || isFinishing()) return;
         startAfterPermission = false;
         refreshOutputs();
-        int selected = preferredOutput == null ? outputSelection : preferredOutput.getId();
+        if (preferredOutput == null) {
+            showNoBluetoothDialog();
+            return;
+        }
+        int selected = preferredOutput.getId();
         updateServiceSettings();
         MicService.start(this, selected);
         refreshStatus();
+    }
+
+    private void showNoBluetoothDialog() {
+        new AlertDialog.Builder(this)
+                .setTitle(R.string.no_bluetooth_dialog_title)
+                .setMessage(R.string.no_bluetooth_dialog_message)
+                .setPositiveButton(R.string.connect_bluetooth, (dialog, button) ->
+                        openSettings(new Intent(Settings.ACTION_BLUETOOTH_SETTINGS)))
+                .setNegativeButton(android.R.string.cancel, null)
+                .show();
     }
 
     private void openSettings(Intent intent) {
@@ -468,7 +488,15 @@ public final class MainActivity extends Activity {
             case STARTING -> R.string.status_starting;
             case STOPPING -> R.string.status_stopping;
             case LIVE -> R.string.status_live;
-            case IDLE -> MicService.error != 0 ? MicService.error : R.string.status_ready;
+            case IDLE -> {
+                if (MicService.error != 0) {
+                    yield MicService.error;
+                } else if (preferredOutput == null) {
+                    yield R.string.status_no_bluetooth;
+                } else {
+                    yield R.string.status_ready;
+                }
+            }
         };
         updateText(statusLabel, getString(status));
         statusLabel.setTextColor(live ? ORANGE : WHITE);
@@ -496,11 +524,8 @@ public final class MainActivity extends Activity {
             String name = MediaOutput.label(this, preferredOutput);
             output = outputSelection == MediaOutput.AUTOMATIC
                     ? getString(R.string.output_auto_device, name) : name;
-        } else if (outputSelection > 0) {
-            output = getString(R.string.error_output_lost);
         } else {
-            output = getString(outputSelection == MediaOutput.AUTOMATIC
-                    ? R.string.output_no_bluetooth : R.string.output_system);
+            output = getString(R.string.output_no_bluetooth);
         }
         updateText(speakerName, output);
     }

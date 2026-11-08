@@ -292,7 +292,7 @@ public final class MicService extends Service {
 
                 AudioDeviceInfo preferred = MediaOutput.preferred(audioManager,
                         MediaOutput.bluetoothDevices(audioManager), outputSelection);
-                if (preferred == null && outputSelection > 0) throw new StreamFailure(R.string.error_output_lost);
+                if (preferred == null) throw new StreamFailure(R.string.error_no_bluetooth);
 
                 int rate = chooseSampleRate();
                 speaker = new AudioTrack.Builder().setAudioAttributes(MediaOutput.ATTRIBUTES)
@@ -304,7 +304,7 @@ public final class MicService extends Service {
                 if (speaker.getState() != AudioTrack.STATE_INITIALIZED) {
                     throw new StreamFailure(R.string.error_audio_setup);
                 }
-                if (preferred != null && !speaker.setPreferredDevice(preferred)) {
+                if (!speaker.setPreferredDevice(preferred)) {
                     throw new StreamFailure(R.string.error_output_unavailable);
                 }
 
@@ -449,6 +449,11 @@ public final class MicService extends Service {
             long deadline = SystemClock.elapsedRealtime() + 2500;
             while (!stopRequested && SystemClock.elapsedRealtime() < deadline) {
                 List<AudioDeviceInfo> routed = MediaOutput.routedDevices(speaker);
+                for (AudioDeviceInfo device : routed) {
+                    if (MediaOutput.isBuiltInSpeaker(device)) {
+                        throw new StreamFailure(R.string.error_phone_speaker_blocked);
+                    }
+                }
                 if (!routed.isEmpty() && (preferred == null
                         || (routed.size() == 1 && routed.get(0).getId() == preferred.getId()))) {
                     return routed;
@@ -478,6 +483,11 @@ public final class MicService extends Service {
 
     private static void checkOutput(AudioTrack speaker, List<AudioDeviceInfo> expected) throws StreamFailure {
         List<AudioDeviceInfo> routed = MediaOutput.routedDevices(speaker);
+        for (AudioDeviceInfo actual : routed) {
+            if (MediaOutput.isBuiltInSpeaker(actual)) {
+                throw new StreamFailure(R.string.error_phone_speaker_blocked);
+            }
+        }
         // Device IDs, not object equality or route order, identify the current sinks.
         if (routed.size() != expected.size()) throw new StreamFailure(R.string.error_output_lost);
         for (AudioDeviceInfo wanted : expected) {

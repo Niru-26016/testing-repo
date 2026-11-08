@@ -28,7 +28,8 @@
     <string name="output_active">Playing to %1$s</string>
     <string name="output_auto">Automatic (prefer Bluetooth)</string>
     <string name="output_auto_device">Automatic · %1$s</string>
-    <string name="output_no_bluetooth">No Bluetooth media device · Android media output</string>
+    <string name="output_no_bluetooth">No Bluetooth device connected</string>
+    <string name="status_no_bluetooth">Connect a Bluetooth speaker or headset to start</string>
     <string name="output_system">Android media output</string>
     <string name="output_phone">Phone speaker</string>
     <string name="output_earpiece">Phone earpiece</string>
@@ -56,6 +57,10 @@
     <string name="error_microphone_route">Android switched the microphone input. Disconnect the external microphone and try again.</string>
     <string name="error_output_lost">Audio output changed. Check your connection or choose an output, then tap Start.</string>
     <string name="error_output_unavailable">Couldn’t confirm the audio output. Check the connection and media audio in Android Settings.</string>
+    <string name="error_no_bluetooth">Connect a Bluetooth speaker or headset to start. Phone speaker is disabled to prevent screeching noise.</string>
+    <string name="error_phone_speaker_blocked">Phone speaker output is disabled to prevent screeching feedback noise. Please connect a Bluetooth speaker or headset.</string>
+    <string name="no_bluetooth_dialog_title">Bluetooth device required</string>
+    <string name="no_bluetooth_dialog_message">Instant Mic requires a Bluetooth speaker, car audio system, or headset.\n\nPlayback through the phone’s built-in speaker is disabled to avoid loud screeching feedback noise.</string>
     <string name="privacy_title">Privacy policy</string>
     <string name="privacy_policy">Instant Mic accesses the microphone when you tap Start. It processes live audio in memory and plays it through Android’s active audio output, which can include a Bluetooth accessory you choose. Pair accessories in Android Settings.\n\nInstant Mic saves no recordings, discards audio buffers when the session ends, and sends no data to servers. It has no accounts, ads, or analytics. Your preferences stay on this device until you clear app storage or uninstall.\n\nUse Stop in the app or in the live notification when notifications are allowed. Manage permissions in Android Settings.\n\nFor privacy questions, use the developer email in the App support section of the Instant Mic listing on Google Play.</string>
 </resources>

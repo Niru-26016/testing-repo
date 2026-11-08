@@ -36,6 +36,13 @@ final class MediaOutput {
         return devices;
     }
 
+    static boolean isBuiltInSpeaker(AudioDeviceInfo device) {
+        if (device == null) return false;
+        int type = device.getType();
+        return type == AudioDeviceInfo.TYPE_BUILTIN_SPEAKER
+                || type == AudioDeviceInfo.TYPE_BUILTIN_EARPIECE;
+    }
+
     private static boolean isBluetoothMedia(AudioDeviceInfo device) {
         int type = device.getType();
         return type == AudioDeviceInfo.TYPE_BLUETOOTH_A2DP
