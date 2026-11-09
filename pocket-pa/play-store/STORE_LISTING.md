@@ -41,7 +41,7 @@ Bluetooth playback delay and compatibility vary by phone and accessory. Echo red
 | Phone screenshot 3 | `03-phone-live.png` | Active microphone session using the emulator’s phone speaker route |
 | Phone screenshot 4 | `04-phone-effects.png` | Voice panel with Clean, Men, Robot, Helium and the Show more options button |
 
-The supplied phone screenshots are 1,080 × 1,920 RGB PNG captures of earlier builds on an Android 16 emulator. The home, picker, live session and four-preset voice panel show screens that carry over into version code 7. Play asks for at least two screenshots across device types and recommends at least four 1,080 × 1,920 portrait or 1,920 × 1,080 landscape images for eligibility on some recommendation surfaces. Check the device-specific slots in Console before submitting. [Play preview asset requirements](https://support.google.com/googleplay/android-developer/answer/9866151)
+The supplied phone screenshots are 1,080 × 1,920 RGB PNG captures of earlier builds on an Android 16 emulator. The home, picker, live session and four-preset voice panel show screens that carry over into version code 1. Play asks for at least two screenshots across device types and recommends at least four 1,080 × 1,920 portrait or 1,920 × 1,080 landscape images for eligibility on some recommendation surfaces. Check the device-specific slots in Console before submitting. [Play preview asset requirements](https://support.google.com/googleplay/android-developer/answer/9866151)
 
 The kit includes the supplied promotional master in `brand-reference` for private reference. Use the simplified assets listed above for the Play listing.
 

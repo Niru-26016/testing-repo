@@ -111,7 +111,7 @@ public final class MainActivity extends Activity {
             startAfterPermission = state.getBoolean("start_after_permission");
             presetsExpanded = state.getBoolean("presets_expanded");
         }
-        micPercent = prefs.getInt("mic", 100);
+        micPercent = prefs.getInt("mic", 50);
         outputPercent = prefs.getInt("out", 45);
         sensitivity = prefs.getInt("sensitivity", 55);
         selectedEffect = prefs.getString("effect", AudioProcessor.CLEAN);
