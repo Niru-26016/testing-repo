@@ -35,13 +35,12 @@ Bluetooth playback delay and compatibility vary by phone and accessory. Echo red
 | Slot | File or capture | Suggested alt text |
 |---|---|---|
 | App icon | `play-icon-512.png`, 512 × 512 RGBA PNG, up to 1,024 KB | White microphone with an orange connection ring on charcoal |
-| Feature graphic | `feature-graphic-1024x500.png`, 1,024 × 500 opaque RGB PNG | An orange audio signal runs from a phone to a Bluetooth speaker. Car and headphone icons show other output options. |
-| Phone screenshot 1 | `01-phone-home.png` | Instant Mic home screen with the Start microphone button |
-| Phone screenshot 2 | `02-phone-output.png` | Audio output picker showing the Bluetooth preference and Android media output options |
-| Phone screenshot 3 | `03-phone-live.png` | Active microphone session using the emulator’s phone speaker route |
-| Phone screenshot 4 | `04-phone-effects.png` | Voice panel with Clean, Men, Robot, Helium and the Show more options button |
+| Feature graphic | `feature-graphic-1024x500.png`, 1,024 × 500 opaque RGB PNG | An orange audio signal runs from a phone to a Bluetooth speaker with feature highlights |
+| Phone screenshot 1 | `01-phone-live.png` | Your Phone is the Mic: live mic audio over Bluetooth with active speaker connected |
+| Phone screenshot 2 | `02-phone-mixer.png` | Pro Audio Controls: fine-tune gain, noise gate, background noise and echo suppression |
+| Phone screenshot 3 | `03-phone-effects.png` | 18 Voice Presets: live voice modulation including Clean, Robot, Helium, and Monster |
 
-The supplied phone screenshots are 1,080 × 1,920 RGB PNG captures of earlier builds on an Android 16 emulator. The home, picker, live session and four-preset voice panel show screens that carry over into version code 1. Play asks for at least two screenshots across device types and recommends at least four 1,080 × 1,920 portrait or 1,920 × 1,080 landscape images for eligibility on some recommendation surfaces. Check the device-specific slots in Console before submitting. [Play preview asset requirements](https://support.google.com/googleplay/android-developer/answer/9866151)
+The supplied phone screenshots are 1,080 × 1,920 RGB PNG AppLaunchpad-style marketing screenshots with realistic device mockups, feature titles, and ambient brand lighting. Play asks for at least two screenshots across device types. Check the device-specific slots in Console before submitting. [Play preview asset requirements](https://support.google.com/googleplay/android-developer/answer/9866151)
 
 The kit includes the supplied promotional master in `brand-reference` for private reference. Use the simplified assets listed above for the Play listing.
 
