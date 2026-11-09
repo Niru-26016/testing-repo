@@ -2,48 +2,56 @@ plugins {
     id 'com.android.application'
 }
 
-def uploadFile = System.getenv('POCKETPA_KEYSTORE_FILE')
-def uploadPassword = System.getenv('POCKETPA_KEYSTORE_PASSWORD')
-def uploadAlias = System.getenv('POCKETPA_KEY_ALIAS')
-def keyPassword = System.getenv('POCKETPA_KEY_PASSWORD')
-def hasSigning = uploadFile && uploadPassword && uploadAlias && keyPassword && file(uploadFile).exists()
+def uploadFile = System.getenv('INSTANTMIC_KEYSTORE_FILE') ?: System.getenv('POCKETPA_KEYSTORE_FILE')
+def uploadPassword = System.getenv('INSTANTMIC_KEYSTORE_PASSWORD') ?: System.getenv('POCKETPA_KEYSTORE_PASSWORD')
+def uploadAlias = System.getenv('INSTANTMIC_KEY_ALIAS') ?: System.getenv('POCKETPA_KEY_ALIAS')
+def uploadKeyPassword = System.getenv('INSTANTMIC_KEY_PASSWORD') ?: System.getenv('POCKETPA_KEY_PASSWORD')
+def signingInputs = [uploadFile, uploadPassword, uploadAlias, uploadKeyPassword]
+def hasSigning = signingInputs.every { it }
+if (signingInputs.any { it } && (!hasSigning || !file(uploadFile).isFile())) {
+    throw new GradleException('Provide all four signing variables (INSTANTMIC_KEYSTORE_FILE, etc.) and a valid keystore file, or leave them all unset for an unsigned bundle.')
+}
 
 android {
-    namespace 'com.niru.pocketpa'
-    compileSdk 36
+    namespace = 'com.niru.instantmic'
+    compileSdk = 36
 
     defaultConfig {
-        applicationId 'com.niru.pocketpa'
-        minSdk 26
-        targetSdk 36
-        versionCode 4
-        versionName '2.2.0'
+        applicationId = 'com.niru.instantmic'
+        minSdk = 26
+        targetSdk = 36
+        versionCode = 1
+        versionName = '1.0'
     }
 
     signingConfigs {
         release {
             if (hasSigning) {
-                storeFile file(uploadFile)
-                storePassword uploadPassword
-                keyAlias uploadAlias
-                keyPassword keyPassword
+                storeFile = file(uploadFile)
+                storePassword = uploadPassword
+                keyAlias = uploadAlias
+                keyPassword = uploadKeyPassword
             }
         }
     }
 
     buildTypes {
         debug {
-            applicationIdSuffix '.debug'
-            versionNameSuffix '-debug'
+            applicationIdSuffix = '.debug'
+            versionNameSuffix = '-debug'
         }
         release {
-            minifyEnabled false
-            if (hasSigning) signingConfig signingConfigs.release
+            minifyEnabled = false
+            if (hasSigning) signingConfig = signingConfigs.release
         }
     }
 
     compileOptions {
-        sourceCompatibility JavaVersion.VERSION_17
-        targetCompatibility JavaVersion.VERSION_17
+        sourceCompatibility = JavaVersion.VERSION_17
+        targetCompatibility = JavaVersion.VERSION_17
     }
+}
+
+dependencies {
+    testImplementation 'junit:junit:4.13.2'
 }
